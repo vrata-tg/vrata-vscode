@@ -77,8 +77,8 @@
           },
           {
             "id": "utility",
-            "title": "Служебные запросы редактора тоже платные",
-            "description": "В версиях с настройкой `chat.byokUtilityModelDefault` выберите `mainAgent` в User Settings, чтобы служебные запросы использовали модель агента. Если настройка недоступна, расширение сообщит об этом.\n[Проверить настройку](command:vrata.utilitySettings)",
+            "title": "Настройте служебную модель",
+            "description": "Нажмите кнопку ниже и выберите `Main Agent Model`.\n[Настроить служебную модель](command:vrata.utilitySettings)",
             "media": {
               "markdown": "media/utility.md"
             }
@@ -114,7 +114,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "Для подключения Врата AI откройте доверенное рабочее пространство."
+      "description": "Для подключения Врат AI настройте рабочее пространство как доверенное."
     },
     "virtualWorkspaces": false
   }
