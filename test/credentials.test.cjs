@@ -39,14 +39,14 @@ test("trim, validate read-only, persist and restore arbitrary-format key", async
   const restarted = new Credentials(f.secrets, f.client, () => {});
   await restarted.initialize();
   assert.equal(restarted.connected, true);
-  await restarted.refresh();
+  await restarted.loadCatalog();
   assert.deepEqual(restarted.catalog, f.credentials.catalog);
 });
 
 test("empty, invalid, revoked and failed storage preserve previous session", async () => {
   const f = fixture("old");
   await f.credentials.initialize();
-  await f.credentials.refresh();
+  await f.credentials.loadCatalog();
   for (const value of ["  ", "invalid", "revoked"]) {
     await assert.rejects(f.credentials.replace(value));
     assert.equal(f.values.get(SECRET_KEY), "old");
@@ -131,7 +131,7 @@ test("late old catalog cannot overwrite the replacement account", async () => {
           complete = resolve;
         })
       : [{ id: key }];
-  const refresh = f.credentials.refresh();
+  const refresh = f.credentials.loadCatalog();
   await f.credentials.replace("new");
   complete([{ id: "old" }]);
   await assert.rejects(refresh);
@@ -192,4 +192,42 @@ test("delete during a pending store must not report replacement success", async 
   await removal;
   assert.equal(f.values.size, 0);
   assert.equal(f.credentials.connected, false);
+});
+
+test("discovery reuses a validated empty catalog without checking the key again", async () => {
+  const f = fixture();
+  f.client.models = async (key) => { f.reads.push(key); return []; };
+  await f.credentials.replace("new");
+  await Promise.all([f.credentials.loadCatalog(), f.credentials.loadCatalog()]);
+  await f.credentials.loadCatalog();
+  assert.deepEqual(f.reads, ["new"]);
+  assert.deepEqual(f.credentials.catalog, []);
+});
+
+test("restored sessions share catalog loading and retry after a failed request", async () => {
+  const f = fixture("saved");
+  await f.credentials.initialize();
+  let reject, resolve;
+  f.client.models = (key) => {
+    f.reads.push(key);
+    return new Promise((yes, no) => { resolve = yes; reject = no; });
+  };
+  const first = f.credentials.loadCatalog();
+  const second = f.credentials.loadCatalog();
+  const failed = Promise.allSettled([first, second]);
+  assert.equal(f.reads.length, 1, "concurrent discovery must share one HTTP request");
+  reject(new Error("temporary failure"));
+  assert.ok((await failed).every((result) => result.status === "rejected"));
+  const retry = f.credentials.loadCatalog();
+  resolve([]);
+  await retry;
+  await f.credentials.loadCatalog();
+  assert.equal(f.reads.length, 2);
+  await f.secrets.store(SECRET_KEY, "external");
+  await f.credentials.reload();
+  const changed = f.credentials.loadCatalog();
+  resolve([{ id: "external model" }]);
+  await changed;
+  assert.deepEqual(f.reads, ["saved", "saved", "external"]);
+  assert.deepEqual(f.credentials.catalog, [{ id: "external model" }]);
 });

@@ -3,19 +3,24 @@
 Устанавливаемое расширение для VS Code **1.104.0+**. Введите существующий
 API-ключ Врата AI: адрес сервиса вводить не требуется.
 
-1. Установите `vrata-ai-0.1.4.vsix` через **Extensions → Install from VSIX…**.
+1. Установите `vrata-ai-0.1.5.vsix` через **Extensions → Install from VSIX…**.
 2. На экране начала работы нажмите **Вставить API-ключ**. Если ключа ещё нет,
    нажмите **Получить ключ в боте**.
 3. Управляйте подключением через **Chat → Manage Models → Врата AI**, строку
    состояния или команду **Врата AI: Управление подключением**.
 
-Выпуск 0.1.4 реализует подключение из
+Выпуск 0.1.5 реализует подключение из
 [задачи #336](https://github.com/v-lebedev/ai-billing-gateway/issues/336).
 **Выбор моделей и баланс пока недоступны**: серверные metadata, каталог и UI
 добавляются в [#337](https://github.com/v-lebedev/ai-billing-gateway/issues/337),
 [#338](https://github.com/v-lebedev/ai-billing-gateway/issues/338) и
 [#340](https://github.com/v-lebedev/ai-billing-gateway/issues/340).
 Расширение не показывает фиктивные модели и лимиты прежнего прототипа.
+
+Уведомление об успешном сохранении не блокирует повторный ввод ключа.
+Каталог, полученный при проверке, используется до смены ключа или перезапуска
+расширения. При восстановлении подключения параллельные обращения к каталогу
+используют один запрос; после неудачи следующая загрузка может повторить его.
 
 Ключ сохраняется только через VS Code SecretStorage. Отмена ввода и неудачная
 проверка замены сохраняют прежний ключ. Удаление отключает локальный профиль,
@@ -72,7 +77,7 @@ Unit/integration tests покрывают lifecycle, ошибки хранени
 
 ```sh
 code --user-data-dir /tmp/vrata-profile --extensions-dir /tmp/vrata-extensions \
-  --install-extension "$PWD/vrata-ai-0.1.4.vsix"
+  --install-extension "$PWD/vrata-ai-0.1.5.vsix"
 VRATA_HOST_PHASE=write VRATA_HOST_RESULT=/tmp/vrata-write.json code --user-data-dir /tmp/vrata-profile \
   --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
 VRATA_HOST_PHASE=read VRATA_HOST_RESULT=/tmp/vrata-read.json code --user-data-dir /tmp/vrata-profile \
@@ -96,7 +101,7 @@ store для настоящего ключа. Windows/macOS и Remote/WSL пок
 
 ```sh
 VRATA_HOST_VERSION=1.135.0 dbus-run-session -- xvfb-run -a bash test/run-host.sh \
-  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.4.vsix" /tmp/vrata-host-1.135
+  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.5.vsix" /tmp/vrata-host-1.135
 ```
 
 ## Диагностика подключения

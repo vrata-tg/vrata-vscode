@@ -16,7 +16,8 @@ interface CatalogClient {
 interface Session {
   key: string;
   controller: AbortController;
-  catalog: readonly unknown[];
+  catalog?: readonly unknown[];
+  catalogRequest?: Promise<void>;
   cache: Map<string, unknown>;
 }
 
@@ -69,7 +70,7 @@ export class Credentials {
     return ++this.attempt;
   }
 
-  private switchSession(key?: string, catalog: readonly unknown[] = []): void {
+  private switchSession(key?: string, catalog?: readonly unknown[]): void {
     this.session?.controller.abort();
     this.session?.cache.clear();
     this.session = key
@@ -139,12 +140,17 @@ export class Credentials {
     return result;
   }
 
-  async refresh(): Promise<void> {
-    if (!this.connected) return;
-    await this.run(async (session) => {
-      const catalog = await this.client.models(session.key, session.signal);
-      if (session.isCurrent()) this.session!.catalog = catalog;
+  async loadCatalog(): Promise<void> {
+    const session = this.session;
+    // Validation already supplies a catalog, including a valid empty one.
+    if (!session || session.catalog !== undefined) return;
+    session.catalogRequest ??= this.run(async (active) => {
+      const catalog = await this.client.models(active.key, active.signal);
+      if (active.isCurrent()) session.catalog = catalog;
+    }).finally(() => {
+      session.catalogRequest = undefined;
     });
+    await session.catalogRequest;
   }
 
   dispose(): void {

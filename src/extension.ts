@@ -160,9 +160,9 @@ async function activateWithOutput(
         },
         () => credentials.replace(value),
       );
-      await vscode.window.showInformationMessage(
+      void vscode.window.showInformationMessage(
         "API-ключ сохранён. Выбор моделей и баланс появятся в следующем этапе MVP.",
-      );
+      ).then(undefined, (error) => logError(error, ...keys));
     } finally {
       editing = false;
     }
@@ -263,7 +263,7 @@ async function activateWithOutput(
           // Background discovery never prompts, even if called repeatedly without credentials.
           if (!credentials.connected || token.isCancellationRequested) return [];
           key = credentials.key;
-          await credentials.refresh();
+          await credentials.loadCatalog();
           // #337/#338 supply verified limits/capabilities. Never advertise the spike's guesses.
           return [];
         } catch (error) {

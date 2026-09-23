@@ -60,7 +60,7 @@ exports.run = async () => {
         true,
         "Secret must survive a host restart",
       );
-      await credentials.refresh();
+      await credentials.loadCatalog();
       assert.deepEqual(credentials.catalog, [{ id: "synthetic-catalog" }]);
       await credentials.remove();
       assert.equal(await secrets.get(SECRET_KEY), undefined);

@@ -15,7 +15,9 @@ test("native commands, masked input, silent discovery and secret events", async 
     notices = [],
     requests = [];
   let readFailure = new Error("keyring startup failure", { cause: new Error("native keyring cause") });
-  let storeFailure, deleteFailure, fetchFailure, contextFailure;
+  let storeFailure, deleteFailure, fetchFailure, contextFailure, infoFailure;
+  let holdNotifications = false;
+  const dismissNotifications = [];
   let input,
     inputOptions,
     inputCount = 0,
@@ -89,6 +91,8 @@ test("native commands, masked input, silent discovery and secret events", async 
       withProgress: async (_options, action) => action(),
       showInformationMessage: async (message) => {
         notices.push(message);
+        if (infoFailure) throw infoFailure;
+        if (holdNotifications) await new Promise((resolve) => dismissNotifications.push(resolve));
       },
       showErrorMessage: async (message, action) => {
         errors.push(message);
@@ -131,6 +135,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       : new Response('{"data":[]}');
   };
   t.after(() => {
+    dismissNotifications.forEach((resolve) => resolve());
     global.fetch = originalFetch;
     context.subscriptions.forEach((item) => item.dispose());
   });
@@ -164,8 +169,29 @@ test("native commands, masked input, silent discovery and secret events", async 
     "explicit Add Models must open provider management",
   );
   assert.equal(requests.length, 0);
+  const discoveryTasks = [];
+  provider.onDidChangeLanguageModelChatInformation(() => {
+    discoveryTasks.push(provider.provideLanguageModelChatInformation({ silent: true }, {}));
+  });
   input = "  arbitrary-format  ";
+  holdNotifications = true;
+  let firstFinished = false;
+  const firstInsertion = commands.get("vrata.setApiKey")().then(() => { firstFinished = true; });
+  await new Promise(setImmediate);
+  const firstInputCount = inputCount;
+  input = undefined;
   await commands.get("vrata.setApiKey")();
+  assert.equal(inputCount, firstInputCount + 1, "replacement input must open while the success notification remains visible");
+  assert.equal(firstFinished, true, "saving the key must not wait for notification dismissal");
+  holdNotifications = false;
+  dismissNotifications.forEach((resolve) => resolve());
+  await firstInsertion;
+  await Promise.all(discoveryTasks);
+  await Promise.all([
+    provider.provideLanguageModelChatInformation({ silent: true }, {}),
+    provider.provideLanguageModelChatInformation({ silent: true }, {}),
+  ]);
+  assert.equal(requests.length, 1, "discovery must reuse the catalog returned by key validation");
   assert.equal(inputOptions.password, true);
   assert.equal(inputOptions.value, undefined);
   assert.ok(inputOptions.validateInput(" "));
@@ -235,9 +261,12 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.doesNotMatch(infoLines.join("\n"), /catalog fetch failed|NEW_TRANSPORT_CODE/);
   fetchFailure = undefined;
   contextFailure = new Error("setContext editor failure");
+  infoFailure = new Error("saved notification failed");
   await commands.get("vrata.setApiKey")();
   await new Promise(setImmediate);
   assertLogged(/setContext editor failure/);
+  assertLogged(/saved notification failed/);
+  infoFailure = undefined;
   contextFailure = undefined;
 
   deleteFailure = new Error(`delete refused ${input}`, { cause: new Error("delete cause") });
@@ -254,12 +283,12 @@ test("native commands, masked input, silent discovery and secret events", async 
   readFailure = undefined;
 
   // Errors before the HTTP request (including a disconnected session) must be logged too.
-  const credentials = context.subscriptions.find((item) => typeof item.refresh === "function");
-  const refresh = credentials.refresh;
-  credentials.refresh = async () => { throw new Error("catalog preparation failed"); };
+  const credentials = context.subscriptions.find((item) => typeof item.loadCatalog === "function");
+  const loadCatalog = credentials.loadCatalog;
+  credentials.loadCatalog = async () => { throw new Error("catalog preparation failed"); };
   assert.deepEqual(await provider.provideLanguageModelChatInformation({ silent: true }, {}), []);
   assertLogged(/catalog preparation failed/);
-  credentials.refresh = refresh;
+  credentials.loadCatalog = loadCatalog;
 
   fetchFailure = new Error(`stream failed ${input}`, { cause: new Error("stream socket cause") });
   const token = { isCancellationRequested: false, onCancellationRequested: () => disposable };
