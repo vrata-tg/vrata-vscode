@@ -1,0 +1,32 @@
+{
+  "name": "vrata-provider-spike",
+  "displayName": "Vrata Provider Spike",
+  "description": "Development-only stable API probe for issue 335",
+  "version": "0.0.1",
+  "publisher": "vrata",
+  "private": true,
+  "engines": {
+    "vscode": "^1.138.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguageModelChatProvider:vrata"
+  ],
+  "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "vrata",
+        "displayName": "Vrata Spike"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "@types/vscode": "1.138.0",
+    "typescript": "5.9.3"
+  }
+}
