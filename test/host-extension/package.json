@@ -1,0 +1,12 @@
+{
+  "name": "vrata-host-tests",
+  "publisher": "vrata-test",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.138.0"
+  },
+  "main": "./extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ]
+}

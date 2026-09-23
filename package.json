@@ -1,8 +1,8 @@
 {
-  "name": "vrata-provider-spike",
-  "displayName": "Vrata Provider Spike",
-  "description": "Development-only stable API probe for issue 335",
-  "version": "0.0.1",
+  "name": "vrata-ai",
+  "displayName": "Врата AI",
+  "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
+  "version": "0.1.0",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -10,23 +10,107 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onLanguageModelChatProvider:vrata"
   ],
   "contributes": {
     "languageModelChatProviders": [
       {
         "vendor": "vrata",
-        "displayName": "Vrata Spike"
+        "displayName": "Врата AI",
+        "managementCommand": "vrata.manage"
+      }
+    ],
+    "commands": [
+      {
+        "command": "vrata.manage",
+        "title": "Управление подключением",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.setApiKey",
+        "title": "Вставить / заменить API-ключ",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.removeApiKey",
+        "title": "Удалить локальный ключ",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.getApiKey",
+        "title": "Получить ключ в боте",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.openWalkthrough",
+        "title": "Как начать работу",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.utilitySettings",
+        "title": "Настройки служебных запросов",
+        "category": "Врата AI"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "vrata.welcome",
+        "title": "Врата AI",
+        "description": "Подключите существующий API-ключ. URL и модели вручную вводить не нужно.",
+        "steps": [
+          {
+            "id": "key",
+            "title": "Вставьте API-ключ",
+            "description": "Проверка ключа бесплатна: расширение только читает доступный каталог. Ключ хранится в защищённом хранилище VS Code.\n[Вставить API-ключ](command:vrata.setApiKey)\n[Получить ключ в боте](command:vrata.getApiKey)",
+            "media": {
+              "markdown": "media/connect.md"
+            },
+            "completionEvents": [
+              "onContext:vrata.connected"
+            ]
+          },
+          {
+            "id": "utility",
+            "title": "Служебные запросы редактора тоже платные",
+            "description": "В пользовательских настройках задайте `chat.byokUtilityModelDefault` = `mainAgent`, чтобы служебные запросы использовали модель агента. Расширение не меняет настройку автоматически.\n[Открыть настройку](command:vrata.utilitySettings)",
+            "media": {
+              "markdown": "media/utility.md"
+            }
+          }
+        ]
       }
     ]
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test test/*.test.cjs"
+    "test": "npm run build && node --test test/*.test.cjs",
+    "vscode:prepublish": "npm run build",
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "22.19.0",
     "@types/vscode": "1.138.0",
+    "@vscode/vsce": "4.0.0",
     "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/v-lebedev/vrata-vscode.git"
+  },
+  "license": "UNLICENSED",
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Для подключения Врата AI откройте доверенное рабочее пространство."
+    },
+    "virtualWorkspaces": false
   }
 }

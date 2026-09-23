@@ -1,128 +1,88 @@
-// Run with --extensionTestsPath after building. No gateway requests are made.
+// Run against an installed VSIX. Synthetic credentials never leave loopback HTTP.
 const assert = require("node:assert/strict");
-const vscode = require("vscode");
 const http = require("node:http");
+const vscode = require("vscode");
 exports.run = async () => {
-  let wire;
-  const server = http.createServer(async (req, res) => {
-    let raw = "";
-    for await (const chunk of req) raw += chunk;
-    wire = JSON.parse(raw);
-    res.writeHead(200, { "Content-Type": "text/event-stream" });
-    res.end(
-      'data: {"choices":[{"delta":{"content":"fixture"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
-    );
+  const extension = vscode.extensions.getExtension("vrata.vrata-ai");
+  assert.ok(extension, "Install the VSIX first");
+  await extension.activate();
+  for (let i = 0; i < 3; i++) {
+    assert.deepEqual(await vscode.lm.selectChatModels({ vendor: "vrata" }), []);
+  }
+  const commands = await vscode.commands.getCommands();
+  for (const id of [
+    "manage",
+    "setApiKey",
+    "removeApiKey",
+    "getApiKey",
+    "openWalkthrough",
+  ]) {
+    assert.ok(commands.includes(`vrata.${id}`));
+  }
+  assert.equal(
+    extension.packageJSON.contributes.languageModelChatProviders[0]
+      .managementCommand,
+    "vrata.manage",
+  );
+  const { secrets } = await vscode.extensions
+    .getExtension("vrata-test.vrata-host-tests")
+    .activate();
+  const { Credentials, SECRET_KEY } = require(
+    `${extension.extensionPath}/dist/credentials`,
+  );
+  const { GatewayClient } = require(`${extension.extensionPath}/dist/gateway`);
+  const calls = [];
+  const server = http.createServer((req, res) => {
+    calls.push({ method: req.method, path: req.url });
+    assert.equal(req.headers.authorization, "Bearer synthetic-host-key");
+    res.end('{"data":[{"id":"synthetic-catalog"}]}');
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  process.env.VRATA_SPIKE_ENDPOINT = `http://127.0.0.1:${server.address().port}/v1/chat/completions`;
-  process.env.VRATA_SPIKE_KEY = "offline-test";
+  const client = new GatewayClient((_url, options) =>
+    fetch(`http://127.0.0.1:${server.address().port}/v1/models`, options),
+  );
+  const credentials = new Credentials(secrets, client, () => {});
   try {
-    const extension = vscode.extensions.getExtension(
-      "vrata.vrata-provider-spike",
-    );
-    assert.ok(extension);
-    await extension.activate();
-    const models = await vscode.lm.selectChatModels({ vendor: "vrata" });
-    assert.equal(models.length, 2);
-    console.log(
-      JSON.stringify(
-        models.map((m) => ({
-          id: m.id,
-          maxInputTokens: m.maxInputTokens,
-          capabilities: m.capabilities,
-        })),
-      ),
-    );
+    await credentials.initialize();
+    if (process.env.VRATA_HOST_PHASE === "write") {
+      assert.equal(credentials.connected, false, "Use a clean profile");
+      await credentials.replace("  synthetic-host-key  ");
+      assert.equal(await secrets.get(SECRET_KEY), "synthetic-host-key");
+    } else {
+      assert.equal(process.env.VRATA_HOST_PHASE, "read");
+      assert.equal(
+        credentials.connected,
+        true,
+        "Secret must survive a host restart",
+      );
+      await credentials.refresh();
+      assert.deepEqual(credentials.catalog, [{ id: "synthetic-catalog" }]);
+      await credentials.remove();
+      assert.equal(await secrets.get(SECRET_KEY), undefined);
+      assert.equal(credentials.connected, false);
+    }
     assert.ok(
-      models.every(
-        (m) => m.capabilities.supportsToolCalling && m.maxInputTokens === 60000,
+      calls.every(
+        (call) => call.method === "GET" && call.path === "/v1/models",
       ),
     );
-    const { toMessages } = require("../dist/extension");
-    const T = vscode.LanguageModelTextPart;
-    const C = vscode.LanguageModelToolCallPart;
-    const R = vscode.LanguageModelToolResultPart;
-    const M = vscode.LanguageModelChatMessage;
-    assert.deepEqual(
-      toMessages([
-        M.User("read"),
-        M.Assistant([
-          new T("checking"),
-          new C("a", "read_file", { path: "sum.js" }),
-          new C("b", "run", { cmd: "test" }),
-        ]),
-        M.User([
-          new R("a", [new T("file")]),
-          new R("b", [new T("passed")]),
-          new T("continue"),
-        ]),
-      ]),
-      [
-        { role: "user", content: "read" },
-        {
-          role: "assistant",
-          content: "checking",
-          tool_calls: [
-            {
-              id: "a",
-              type: "function",
-              function: { name: "read_file", arguments: '{"path":"sum.js"}' },
-            },
-            {
-              id: "b",
-              type: "function",
-              function: { name: "run", arguments: '{"cmd":"test"}' },
-            },
-          ],
-        },
-        { role: "tool", tool_call_id: "a", content: "file" },
-        { role: "tool", tool_call_id: "b", content: "passed" },
-        { role: "user", content: "continue" },
-      ],
-    );
-    assert.throws(
-      () =>
-        toMessages([
-          M.User([
-            new vscode.LanguageModelDataPart(new Uint8Array([1]), "image/png"),
-          ]),
-        ]),
-      /text and tool/,
-    );
-    const response = await models[0].sendRequest([M.User("offline")], {
-      tools: [{ name: "no_args", description: "No arguments" }],
-      toolMode: vscode.LanguageModelChatToolMode.Required,
-    });
-    let output = "";
-    for await (const part of response.text) output += part;
-    assert.equal(output, "fixture");
-    assert.equal(wire.tool_choice, "required");
-    assert.deepEqual(wire.tools[0].function.parameters, {
-      type: "object",
-      properties: {},
-    });
-    assert.equal(wire.n, undefined);
-    const session = await vscode.authentication.getSession(
-      "github",
-      ["user:email"],
-      { createIfNone: false },
-    );
+    assert.equal(calls.length, 1);
     assert.equal(
-      session,
-      undefined,
-      "Run host smoke in a clean signed-out profile",
-    );
-    console.log(
-      JSON.stringify({
-        stable_api: true,
-        vscode: vscode.version,
-        models: models.length,
-        tool_history: true,
-        github_session: false,
-        no_arg_tool: true,
+      await vscode.authentication.getSession("github", ["user:email"], {
+        createIfNone: false,
       }),
+      undefined,
     );
+    return {
+      vscode: vscode.version,
+      phase: process.env.VRATA_HOST_PHASE,
+      installed_provider: true,
+      secret_storage: true,
+      readonly_requests: calls.length,
+      github_session: false,
+    };
   } finally {
+    credentials.dispose();
     server.closeAllConnections();
     server.close();
   }
