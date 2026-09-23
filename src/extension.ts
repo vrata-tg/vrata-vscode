@@ -127,7 +127,7 @@ async function activateWithOutput(
           if (error instanceof CredentialOperationCancelled) return;
           const message = error instanceof CredentialError
             ? error.message
-            : "Не удалось выполнить команду Врата AI. Подробности в журнале «Врата AI».";
+            : "Не удалось выполнить команду Врат AI.";
           await showError(message);
         }
       }),
@@ -144,7 +144,7 @@ async function activateWithOutput(
           ? "Врата AI: заменить API-ключ"
           : "Врата AI: вставить API-ключ",
         prompt:
-          "Ключ из бота Врата AI. Проверка не вызывает модель и не списывает средства.",
+          "Ключ из бота Врата AI в формате sk-***",
         password: true,
         ignoreFocusOut: true,
         placeHolder: "Вставьте API-ключ",
@@ -161,7 +161,7 @@ async function activateWithOutput(
         () => credentials.replace(value),
       );
       void vscode.window.showInformationMessage(
-        "API-ключ сохранён. Выбор моделей и баланс появятся в следующем этапе MVP.",
+        "API-ключ сохранён.",
       ).then(undefined, (error) => logError(error, ...keys));
     } finally {
       editing = false;
@@ -169,14 +169,14 @@ async function activateWithOutput(
   });
   command("vrata.removeApiKey", async () => {
     const answer = await vscode.window.showWarningMessage(
-      "Удалить ключ из этого профиля VS Code? В других инструментах он продолжит работать.",
+      "Удалить ключ из этого профиля VS Code?",
       { modal: true },
-      "Удалить локальный ключ",
+      "Удалить ключ",
     );
-    if (answer !== "Удалить локальный ключ") return;
+    if (answer !== "Удалить люч") return;
     await credentials.remove();
     await vscode.window.showInformationMessage(
-      "Локальный API-ключ удалён. Врата AI отключены.",
+      "Врата AI отключены.",
     );
   });
   command("vrata.getApiKey", () =>
@@ -195,7 +195,7 @@ async function activateWithOutput(
       .inspect<string>("byokUtilityModelDefault");
     if (setting?.defaultValue === undefined) {
       return vscode.window.showInformationMessage(
-        "Настройка служебной модели недоступна в этой версии VS Code. Для неё обновите редактор. Подключением Врата AI можно управлять через строку состояния.",
+        "Настройка служебной модели недоступна в этой версии VS Code. Для неё обновите редактор. Подключением Врат AI можно управлять через строку состояния.",
       );
     }
     return vscode.commands.executeCommand(
@@ -214,7 +214,7 @@ async function activateWithOutput(
         },
         { label: "Получить ключ в боте", command: "vrata.getApiKey" },
         ...(credentials.connected
-          ? [{ label: "Удалить локальный ключ", command: "vrata.removeApiKey" }]
+          ? [{ label: "Удалить ключ", command: "vrata.removeApiKey" }]
           : []),
         { label: "Открыть журнал", command: "vrata.showLogs" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
@@ -236,7 +236,7 @@ async function activateWithOutput(
         const key = credentials.key;
         void credentials.reload().catch((error) => {
           logError(error, key);
-          return showError("Не удалось прочитать локальный ключ Врата AI.");
+          return showError("Не удалось прочитать ключ Врат AI.");
         });
       }
     }),
@@ -245,7 +245,7 @@ async function activateWithOutput(
     await credentials.initialize();
   } catch (error) {
     logError(error);
-    await showError("Не удалось прочитать локальный ключ Врата AI. Повторите подключение.");
+    await showError("Не удалось прочитать ключ Врат AI. Повторите подключение.");
   }
   updateStatus();
   status.show();
@@ -353,7 +353,7 @@ async function activateWithOutput(
         } catch (error) {
           logError(error, key);
           if (signal?.aborted) throw new vscode.CancellationError();
-          throw new Error("Не удалось получить ответ Врата AI. Подробности в журнале «Врата AI».");
+          throw new Error("Не удалось получить ответ Врат AI.");
         }
       },
     }),
