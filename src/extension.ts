@@ -159,12 +159,20 @@ export async function activate(
       false,
     ),
   );
-  command("vrata.utilitySettings", () =>
-    vscode.commands.executeCommand(
+  command("vrata.utilitySettings", () => {
+    const setting = vscode.workspace
+      .getConfiguration("chat")
+      .inspect<string>("byokUtilityModelDefault");
+    if (setting?.defaultValue === undefined) {
+      return vscode.window.showInformationMessage(
+        "Настройка служебной модели недоступна в этой версии VS Code. Для неё обновите редактор. Подключением Врата AI можно управлять через строку состояния.",
+      );
+    }
+    return vscode.commands.executeCommand(
       "workbench.action.openSettings",
       "chat.byokUtilityModelDefault",
-    ),
-  );
+    );
+  });
   command("vrata.manage", async () => {
     const choice = await vscode.window.showQuickPick(
       [

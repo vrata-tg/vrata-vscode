@@ -5,6 +5,8 @@ const { EventEmitter } = require("node:events");
 
 test("native commands, masked input, silent discovery and secret events", async (t) => {
   const commands = new Map();
+  const executed = [];
+  let utilitySettingAvailable = false;
   const values = new Map();
   const errors = [],
     notices = [],
@@ -36,6 +38,13 @@ test("native commands, masked input, silent discovery and secret events", async 
     },
   };
   const vscode = {
+    workspace: {
+      getConfiguration: () => ({
+        inspect: () => utilitySettingAvailable
+          ? { defaultValue: "default" }
+          : { key: "chat.byokUtilityModelDefault", defaultValue: undefined },
+      }),
+    },
     EventEmitter: class {
       events = new EventEmitter();
       event = (listener) => {
@@ -76,7 +85,10 @@ test("native commands, masked input, silent discovery and secret events", async 
         commands.set(id, action);
         return disposable;
       },
-      executeCommand: async (id, ...args) => commands.get(id)?.(...args),
+      executeCommand: async (id, ...args) => {
+        executed.push([id, ...args]);
+        return commands.get(id)?.(...args);
+      },
     },
     lm: {
       registerLanguageModelChatProvider: (vendor, value) => {
@@ -104,6 +116,14 @@ test("native commands, masked input, silent discovery and secret events", async 
     context.subscriptions.forEach((item) => item.dispose());
   });
   await extension.activate(context);
+  await commands.get("vrata.utilitySettings")();
+  assert.equal(executed.some(([id]) => id === "workbench.action.openSettings"), false,
+    "older editors must not open a setting they do not support");
+  assert.ok(notices.some((message) => message.includes("недоступна")));
+  utilitySettingAvailable = true;
+  await commands.get("vrata.utilitySettings")();
+  assert.ok(executed.some(([id, setting]) =>
+    id === "workbench.action.openSettings" && setting === "chat.byokUtilityModelDefault"));
   for (const silent of [true, true, false]) {
     assert.deepEqual(
       await provider.provideLanguageModelChatInformation({ silent }, {}),

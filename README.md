@@ -1,15 +1,15 @@
 # Врата AI для VS Code
 
-Устанавливаемое расширение для VS Code **1.138.0+**. Введите существующий
+Устанавливаемое расширение для VS Code **1.104.0+**. Введите существующий
 API-ключ Врата AI: адрес сервиса вводить не требуется.
 
-1. Установите `vrata-ai-0.1.0.vsix` через **Extensions → Install from VSIX…**.
+1. Установите `vrata-ai-0.1.1.vsix` через **Extensions → Install from VSIX…**.
 2. На экране начала работы нажмите **Вставить API-ключ**. Если ключа ещё нет,
    нажмите **Получить ключ в боте**.
 3. Управляйте подключением через **Chat → Manage Models → Врата AI**, строку
    состояния или команду **Врата AI: Управление подключением**.
 
-Выпуск 0.1.0 реализует подключение из
+Выпуск 0.1.1 реализует подключение из
 [задачи #336](https://github.com/v-lebedev/ai-billing-gateway/issues/336).
 **Выбор моделей и баланс пока недоступны**: серверные metadata, каталог и UI
 добавляются в [#337](https://github.com/v-lebedev/ai-billing-gateway/issues/337),
@@ -29,10 +29,24 @@ API-ключ Врата AI: адрес сервиса вводить не тре
 После смены ключа отменяются запросы старой сессии, очищается её кэш и
 уведомляется провайдер; поздние ответы не применяются к новой сессии.
 
-Служебные запросы редактора также могут оплачиваться. В **User Settings** задайте
+Служебные запросы редактора также могут оплачиваться. Если настройка доступна в вашей версии, в **User Settings** задайте
 `chat.byokUtilityModelDefault` = `mainAgent`, чтобы использовать модель агента
 для таких запросов. Расширение открывает настройку по явному действию и не меняет
-её автоматически. Workspace Trust и корпоративные BYOK policies остаются в силе.
+её автоматически. Если настройка отсутствует, команда сообщает об этом. Workspace Trust и корпоративные BYOK policies остаются в силе.
+
+## Совместимость
+
+Минимум — **VS Code 1.104.0**: в этой версии появился стабильный
+[Language Model Chat Provider API](https://code.visualstudio.com/updates/v1_104#_language-model-chat-provider-api).
+Компиляция использует типы именно 1.104.0, чтобы случайно не добавить API более
+нового редактора. CI устанавливает VSIX и проверяет активацию/SecretStorage
+после перезапуска на **1.104.0, 1.135.0 и 1.138.0** (Linux).
+
+На ранних версиях доступ к встроенному чату может требовать входа в GitHub и
+подходящего плана Copilot; расширение не снимает ограничения самого редактора.
+Управление ключом доступно также через строку состояния и палитру команд.
+Работа без GitHub sign-in подтверждена для onboarding; полный агентный сценарий
+без подписки ранее проверен на 1.138.0 в отчёте #335, а не на всех версиях.
 
 ## Разработка и проверки
 
@@ -57,7 +71,7 @@ Unit/integration tests покрывают lifecycle, ошибки хранени
 
 ```sh
 code --user-data-dir /tmp/vrata-profile --extensions-dir /tmp/vrata-extensions \
-  --install-extension "$PWD/vrata-ai-0.1.0.vsix"
+  --install-extension "$PWD/vrata-ai-0.1.1.vsix"
 VRATA_HOST_PHASE=write VRATA_HOST_RESULT=/tmp/vrata-write.json code --user-data-dir /tmp/vrata-profile \
   --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
 VRATA_HOST_PHASE=read VRATA_HOST_RESULT=/tmp/vrata-read.json code --user-data-dir /tmp/vrata-profile \
@@ -75,3 +89,11 @@ store для настоящего ключа. Windows/macOS и Remote/WSL пок
 
 История и техническая база:
 [отчёт #335](https://github.com/v-lebedev/vrata-docs/blob/main/reports/2026-09-23/vscode-335/report.md).
+
+Автоматический Linux-прогон с изолированными profile/keyring (нужны `xvfb`,
+`xauth`, `dbus-x11`, `gnome-keyring`; путь результата должен быть новым):
+
+```sh
+VRATA_HOST_VERSION=1.135.0 dbus-run-session -- xvfb-run -a bash test/run-host.sh \
+  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.1.vsix" /tmp/vrata-host-1.135
+```

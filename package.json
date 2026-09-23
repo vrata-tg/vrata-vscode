@@ -2,11 +2,11 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "vrata",
   "private": true,
   "engines": {
-    "vscode": "^1.138.0"
+    "vscode": "^1.104.0"
   },
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -73,7 +73,7 @@
           {
             "id": "utility",
             "title": "Служебные запросы редактора тоже платные",
-            "description": "В пользовательских настройках задайте `chat.byokUtilityModelDefault` = `mainAgent`, чтобы служебные запросы использовали модель агента. Расширение не меняет настройку автоматически.\n[Открыть настройку](command:vrata.utilitySettings)",
+            "description": "В версиях с настройкой `chat.byokUtilityModelDefault` выберите `mainAgent` в User Settings, чтобы служебные запросы использовали модель агента. Если настройка недоступна, расширение сообщит об этом.\n[Проверить настройку](command:vrata.utilitySettings)",
             "media": {
               "markdown": "media/utility.md"
             }
@@ -90,7 +90,7 @@
   },
   "devDependencies": {
     "@types/node": "22.19.0",
-    "@types/vscode": "1.138.0",
+    "@types/vscode": "1.104.0",
     "@vscode/vsce": "4.0.0",
     "typescript": "5.9.3"
   },

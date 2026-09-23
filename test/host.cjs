@@ -3,6 +3,9 @@ const assert = require("node:assert/strict");
 const http = require("node:http");
 const vscode = require("vscode");
 exports.run = async () => {
+  if (process.env.VRATA_HOST_VERSION) {
+    assert.equal(vscode.version, process.env.VRATA_HOST_VERSION);
+  }
   const extension = vscode.extensions.getExtension("vrata.vrata-ai");
   assert.ok(extension, "Install the VSIX first");
   await extension.activate();
@@ -80,6 +83,9 @@ exports.run = async () => {
       secret_storage: true,
       readonly_requests: calls.length,
       github_session: false,
+      node: process.versions.node,
+      utility_setting_available: vscode.workspace
+        .getConfiguration("chat").inspect("byokUtilityModelDefault")?.defaultValue !== undefined,
     };
   } finally {
     credentials.dispose();
