@@ -5,6 +5,8 @@ const { EventEmitter } = require("node:events");
 
 test("native commands, masked input, silent discovery and secret events", async (t) => {
   const commands = new Map();
+  const logLines = [];
+  let logShown = 0;
   const executed = [];
   let utilitySettingAvailable = false;
   const values = new Map();
@@ -61,6 +63,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     StatusBarAlignment: { Right: 1 },
     ProgressLocation: { Notification: 1 },
     window: {
+      createOutputChannel: (name, options) => {
+        assert.equal(name, "Врата AI");
+        assert.deepEqual(options, { log: true });
+        return { ...disposable, info: (line) => logLines.push(line), error: (line) => logLines.push(line), show: () => logShown++ };
+      },
       createStatusBarItem: () => ({ ...disposable, show() {} }),
       showQuickPick: async () => {
         manageCount++;
@@ -75,8 +82,10 @@ test("native commands, masked input, silent discovery and secret events", async 
       showInformationMessage: async (message) => {
         notices.push(message);
       },
-      showErrorMessage: async (message) => {
+      showErrorMessage: async (message, action) => {
         errors.push(message);
+        assert.equal(action, "Открыть журнал");
+        return action;
       },
       showWarningMessage: async () => "Удалить локальный ключ",
     },
@@ -153,6 +162,11 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
   assert.equal(errors.length, 1);
   assert.ok(!errors[0].includes("private data"));
+  assert.match(errors[0], /HTTP 401/);
+  assert.equal(logShown, 1);
+  await commands.get("vrata.showLogs")();
+  assert.equal(logShown, 2);
+  assert.ok(logLines.some((line) => line.includes("HTTP 401")));
   let changes = 0;
   provider.onDidChangeLanguageModelChatInformation(() => changes++);
   input = "replacement";
@@ -175,6 +189,6 @@ test("native commands, masked input, silent discovery and secret events", async 
     ),
   );
   assert.ok(
-    !JSON.stringify([...errors, ...notices]).includes("arbitrary-format"),
+    !JSON.stringify([...errors, ...notices, ...logLines]).includes("arbitrary-format"),
   );
 });

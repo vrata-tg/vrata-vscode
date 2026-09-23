@@ -3,13 +3,13 @@
 Устанавливаемое расширение для VS Code **1.104.0+**. Введите существующий
 API-ключ Врата AI: адрес сервиса вводить не требуется.
 
-1. Установите `vrata-ai-0.1.1.vsix` через **Extensions → Install from VSIX…**.
+1. Установите `vrata-ai-0.1.2.vsix` через **Extensions → Install from VSIX…**.
 2. На экране начала работы нажмите **Вставить API-ключ**. Если ключа ещё нет,
    нажмите **Получить ключ в боте**.
 3. Управляйте подключением через **Chat → Manage Models → Врата AI**, строку
    состояния или команду **Врата AI: Управление подключением**.
 
-Выпуск 0.1.1 реализует подключение из
+Выпуск 0.1.2 реализует подключение из
 [задачи #336](https://github.com/v-lebedev/ai-billing-gateway/issues/336).
 **Выбор моделей и баланс пока недоступны**: серверные metadata, каталог и UI
 добавляются в [#337](https://github.com/v-lebedev/ai-billing-gateway/issues/337),
@@ -71,7 +71,7 @@ Unit/integration tests покрывают lifecycle, ошибки хранени
 
 ```sh
 code --user-data-dir /tmp/vrata-profile --extensions-dir /tmp/vrata-extensions \
-  --install-extension "$PWD/vrata-ai-0.1.1.vsix"
+  --install-extension "$PWD/vrata-ai-0.1.2.vsix"
 VRATA_HOST_PHASE=write VRATA_HOST_RESULT=/tmp/vrata-write.json code --user-data-dir /tmp/vrata-profile \
   --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
 VRATA_HOST_PHASE=read VRATA_HOST_RESULT=/tmp/vrata-read.json code --user-data-dir /tmp/vrata-profile \
@@ -95,5 +95,19 @@ store для настоящего ключа. Windows/macOS и Remote/WSL пок
 
 ```sh
 VRATA_HOST_VERSION=1.135.0 dbus-run-session -- xvfb-run -a bash test/run-host.sh \
-  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.1.vsix" /tmp/vrata-host-1.135
+  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.2.vsix" /tmp/vrata-host-1.135
 ```
+
+## Диагностика подключения
+
+При ошибке проверки ключа уведомление показывает причину и код: например,
+`ENOTFOUND` (DNS), `CERT_HAS_EXPIRED` (сертификат), `ECONNREFUSED`
+(отказ соединения), `TIMEOUT` или `HTTP 401`. Ошибки JSON и формата каталога
+отличаются от сетевых ошибок.
+
+Нажмите **Открыть журнал** в уведомлении или выполните команду
+**Врата AI: Открыть журнал**. Канал **Врата AI** в Output содержит время,
+адрес проверяемого endpoint, HTTP-статус и распознанную причину сбоя.
+Ключ, заголовки, тела ответов и исходные тексты исключений не записываются.
+Если транспорт не сообщает известный код, выводится `NETWORK_ERROR`;
+неизвестную причину расширение не пытается угадать.

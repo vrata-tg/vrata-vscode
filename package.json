@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -50,6 +50,11 @@
       {
         "command": "vrata.utilitySettings",
         "title": "Настройки служебных запросов",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.showLogs",
+        "title": "Открыть журнал",
         "category": "Врата AI"
       }
     ],

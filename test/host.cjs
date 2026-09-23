@@ -19,9 +19,11 @@ exports.run = async () => {
     "removeApiKey",
     "getApiKey",
     "openWalkthrough",
+    "showLogs",
   ]) {
     assert.ok(commands.includes(`vrata.${id}`));
   }
+  await vscode.commands.executeCommand("vrata.showLogs");
   assert.equal(
     extension.packageJSON.contributes.languageModelChatProviders[0]
       .managementCommand,

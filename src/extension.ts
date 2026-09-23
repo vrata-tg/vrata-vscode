@@ -62,6 +62,8 @@ export function toMessages(
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  const output = vscode.window.createOutputChannel("Врата AI", { log: true });
+  context.subscriptions.push(output);
   const changes = new vscode.EventEmitter<void>();
   const status = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -70,7 +72,7 @@ export async function activate(
   status.command = "vrata.manage";
   const credentials = new Credentials(
     context.secrets,
-    new GatewayClient(),
+    new GatewayClient(fetch, (message) => output.info(message)),
     () => {
       updateStatus();
       changes.fire();
@@ -96,15 +98,18 @@ export async function activate(
           return await action();
         } catch (error) {
           if (error instanceof CredentialOperationCancelled) return;
-          await vscode.window.showErrorMessage(
-            error instanceof CredentialError
-              ? error.message
-              : "Не удалось изменить подключение Врата AI. Попробуйте ещё раз.",
-          );
+          const message = error instanceof CredentialError
+            ? error.message
+            : "Не удалось изменить подключение Врата AI. Ошибка локального хранилища или редактора.";
+          output.error(message);
+          if (await vscode.window.showErrorMessage(message, "Открыть журнал") === "Открыть журнал") {
+            output.show(true);
+          }
         }
       }),
     );
   }
+  command("vrata.showLogs", () => output.show(true));
   let editing = false;
   command("vrata.setApiKey", async () => {
     if (editing) return;
@@ -186,6 +191,7 @@ export async function activate(
         ...(credentials.connected
           ? [{ label: "Удалить локальный ключ", command: "vrata.removeApiKey" }]
           : []),
+        { label: "Открыть журнал", command: "vrata.showLogs" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
       ],
       {
