@@ -87,54 +87,53 @@ test("network errors are sanitized and a cancelled request does not start fetch"
   assert.equal(requests, 0);
 });
 
-test("network diagnostics preserve nested cause codes without exposing credentials", async () => {
-  const secret = "synthetic-sensitive-key";
-  for (const code of ["ENOTFOUND", "ECONNREFUSED", "CERT_HAS_EXPIRED", "UND_ERR_CONNECT_TIMEOUT"]) {
-    const logs = [];
-    const client = new GatewayClient(async () => {
-      throw new TypeError(`fetch failed ${secret}`, {
-        cause: new AggregateError([
-          Object.assign(new Error(`Authorization: Bearer ${secret}`), { code }),
-        ]),
-      });
-    }, (message) => logs.push(message));
-    await assert.rejects(client.models(secret, new AbortController().signal), (error) => {
-      assert.ok(error.message.includes(code));
-      assert.ok(!error.message.includes(secret));
-      return true;
+test("raw diagnostics preserve unknown errors, stacks and nested causes while masking the key", async () => {
+  for (const secret of ["synthetic-sensitive-key", "key'with\\slash"]) {
+    const inner = Object.assign(new Error(`proxy negotiation failed: ${secret}`), {
+      code: "NEW_TRANSPORT_CODE",
+      detail: { credential: secret, stage: "handshake" },
     });
-    assert.ok(logs.some((line) => line.includes(code)));
-    assert.ok(logs.some((line) => line.includes("GET https://api.vrata.tg/v1/models")));
-    assert.ok(!logs.join("\n").includes(secret));
-    assert.ok(!logs.join("\n").includes("Authorization"));
+    const failure = new TypeError("fetch failed", { cause: new AggregateError([inner], "connection attempts") });
+    const logs = [];
+    const client = new GatewayClient(async () => { throw failure; }, (line) => logs.push(line));
+    await assert.rejects(client.models(secret, new AbortController().signal), /журнал/);
+    const output = logs.join("\n");
+    assert.match(output, /TypeError: fetch failed/);
+    assert.match(output, /connection attempts/);
+    assert.match(output, /proxy negotiation failed/);
+    assert.match(output, /NEW_TRANSPORT_CODE/);
+    assert.match(output, /handshake/);
+    assert.match(output, /gateway.test.cjs/);
+    assert.match(output, /\[REDACTED\]/);
+    assert.ok(!output.includes(secret));
+    assert.ok(!output.includes(require("node:util").inspect(secret).slice(1, -1)));
   }
 });
 
-test("HTTP, timeout, JSON and redirect failures have distinct safe diagnostics", async () => {
+test("HTTP status remains visible and parser/transport exceptions reach Output unchanged", async () => {
   const cases = [
-    [async () => new Response("private upstream body", { status: 401 }), /HTTP 401/],
-    [async () => new Response("private upstream body", { status: 403 }), /HTTP 403/],
-    [async () => new Response("private upstream body", { status: 429 }), /HTTP 429/],
-    [async () => new Response("private upstream body", { status: 503 }), /HTTP 503/],
-    [async () => new Response("private upstream body"), /INVALID_JSON/],
-    [async () => new Response('{"wrong":[]}'), /INVALID_CATALOG/],
-    [async () => { throw new DOMException("private upstream body", "TimeoutError"); }, /TIMEOUT/],
-    [async () => { throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") }); }, /REDIRECT/],
+    [async () => new Response("upstream body", { status: 401, statusText: "synthetic-key" }), /HTTP 401/],
+    [async () => new Response("upstream body", { status: 503 }), /HTTP 503/],
+    [async () => new Response("not json"), /SyntaxError/],
+    [async () => { throw new DOMException("operation expired", "TimeoutError"); }, /TimeoutError\]: operation expired/],
+    [async () => { throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") }); }, /unexpected redirect/],
   ];
   for (const [request, expected] of cases) {
     const logs = [];
     const client = new GatewayClient(request, (line) => logs.push(line));
-    await assert.rejects(client.models("synthetic-key", new AbortController().signal), expected);
+    await assert.rejects(client.models("synthetic-key", new AbortController().signal));
     assert.match(logs.join("\n"), expected);
-    assert.doesNotMatch(logs.join("\n"), /private upstream body|synthetic-key/);
+    assert.doesNotMatch(logs.join("\n"), /synthetic-key/);
   }
 });
 
-test("unknown and cyclic causes stay bounded and do not leak raw error fields", async () => {
-  const error = Object.assign(new Error("synthetic-secret"), { code: "synthetic-secret" });
-  error.cause = error;
-  const logs = [];
-  const client = new GatewayClient(async () => { throw error; }, (line) => logs.push(line));
-  await assert.rejects(client.models("synthetic-secret", new AbortController().signal), /NETWORK_ERROR/);
-  assert.doesNotMatch(logs.join("\n"), /synthetic-secret/);
+test("raw diagnostics support cyclic errors and non-Error throws", async () => {
+  const failure = Object.assign(new Error("unknown original failure"), { code: "FUTURE_ERROR" });
+  failure.cause = failure;
+  for (const thrown of [failure, { reason: "plain object failure" }, "plain string failure"]) {
+    const logs = [];
+    const client = new GatewayClient(async () => { throw thrown; }, (line) => logs.push(line));
+    await assert.rejects(client.models("synthetic-key", new AbortController().signal));
+    assert.match(logs.join("\n"), /unknown original failure|plain object failure|plain string failure/);
+  }
 });
