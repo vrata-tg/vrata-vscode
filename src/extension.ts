@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { formatError } from "./diagnostics";
 import { Message, streamChat } from "./transport";
 import {
   CredentialOperationCancelled,
@@ -64,6 +65,18 @@ export async function activate(
 ): Promise<void> {
   const output = vscode.window.createOutputChannel("Врата AI", { log: true });
   context.subscriptions.push(output);
+  try {
+    await activateWithOutput(context, output);
+  } catch (error) {
+    output.error(formatError(error));
+    throw error;
+  }
+}
+
+async function activateWithOutput(
+  context: vscode.ExtensionContext,
+  output: vscode.LogOutputChannel,
+): Promise<void> {
   const changes = new vscode.EventEmitter<void>();
   const status = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -78,6 +91,18 @@ export async function activate(
       changes.fire();
     },
   );
+  function logError(error: unknown, ...keys: (string | undefined)[]): void {
+    output.error(formatError(error, credentials.key, ...keys));
+  }
+  async function showError(message: string): Promise<void> {
+    try {
+      if (await vscode.window.showErrorMessage(message, "Открыть журнал") === "Открыть журнал") {
+        output.show(true);
+      }
+    } catch (error) {
+      logError(error);
+    }
+  }
   function updateStatus(): void {
     status.text = credentials.connected
       ? "$(key) Врата AI"
@@ -89,29 +114,28 @@ export async function activate(
       "setContext",
       "vrata.connected",
       credentials.connected,
-    );
+    ).then(undefined, (error) => logError(error));
   }
-  function command(id: string, action: () => unknown): void {
+  function command(id: string, action: (keys: string[]) => unknown): void {
     context.subscriptions.push(
       vscode.commands.registerCommand(id, async () => {
+        const keys = credentials.key ? [credentials.key] : [];
         try {
-          return await action();
+          return await action(keys);
         } catch (error) {
+          logError(error, ...keys);
           if (error instanceof CredentialOperationCancelled) return;
           const message = error instanceof CredentialError
             ? error.message
-            : "Не удалось изменить подключение Врата AI. Ошибка локального хранилища или редактора.";
-          output.error(message);
-          if (await vscode.window.showErrorMessage(message, "Открыть журнал") === "Открыть журнал") {
-            output.show(true);
-          }
+            : "Не удалось выполнить команду Врата AI. Подробности в журнале «Врата AI».";
+          await showError(message);
         }
       }),
     );
   }
   command("vrata.showLogs", () => output.show(true));
   let editing = false;
-  command("vrata.setApiKey", async () => {
+  command("vrata.setApiKey", async (keys) => {
     if (editing) return;
     editing = true;
     try {
@@ -128,6 +152,7 @@ export async function activate(
           input.trim() ? undefined : "Вставьте API-ключ.",
       });
       if (value === undefined) return;
+      keys.push(value.trim());
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
@@ -208,20 +233,19 @@ export async function activate(
     status,
     context.secrets.onDidChange((event) => {
       if (event.key === SECRET_KEY) {
-        void credentials.reload().catch(() => {
-          void vscode.window.showErrorMessage(
-            "Не удалось прочитать локальный ключ Врата AI.",
-          );
+        const key = credentials.key;
+        void credentials.reload().catch((error) => {
+          logError(error, key);
+          return showError("Не удалось прочитать локальный ключ Врата AI.");
         });
       }
     }),
   );
   try {
     await credentials.initialize();
-  } catch {
-    void vscode.window.showErrorMessage(
-      "Не удалось прочитать локальный ключ Врата AI. Повторите подключение.",
-    );
+  } catch (error) {
+    logError(error);
+    await showError("Не удалось прочитать локальный ключ Врата AI. Повторите подключение.");
   }
   updateStatus();
   status.show();
@@ -230,28 +254,36 @@ export async function activate(
     vscode.lm.registerLanguageModelChatProvider("vrata", {
       onDidChangeLanguageModelChatInformation: changes.event,
       async provideLanguageModelChatInformation(options, token) {
-        if (token.isCancellationRequested) return [];
-        // Add Models invokes non-silent discovery for providers with managementCommand.
-        if (!options.silent)
-          await vscode.commands.executeCommand("vrata.manage");
-        // Background discovery never prompts, even if called repeatedly without credentials.
-        if (!credentials.connected || token.isCancellationRequested) return [];
+        let key = credentials.key;
         try {
+          if (token.isCancellationRequested) return [];
+          // Add Models invokes non-silent discovery for providers with managementCommand.
+          if (!options.silent)
+            await vscode.commands.executeCommand("vrata.manage");
+          // Background discovery never prompts, even if called repeatedly without credentials.
+          if (!credentials.connected || token.isCancellationRequested) return [];
+          key = credentials.key;
           await credentials.refresh();
-        } catch {
+          // #337/#338 supply verified limits/capabilities. Never advertise the spike's guesses.
+          return [];
+        } catch (error) {
+          logError(error, key);
           return [];
         }
-        // #337/#338 supply verified limits/capabilities. Never advertise the spike's guesses.
-        return [];
       },
       async provideTokenCount(_model, input) {
-        // Approximate transport helper; replaced by catalog/token counting work in #338.
-        return Math.ceil(
-          Buffer.byteLength(
-            typeof input === "string" ? input : JSON.stringify(input),
-            "utf8",
-          ) / 3,
-        );
+        try {
+          // Approximate transport helper; replaced by catalog/token counting work in #338.
+          return Math.ceil(
+            Buffer.byteLength(
+              typeof input === "string" ? input : JSON.stringify(input),
+              "utf8",
+            ) / 3,
+          );
+        } catch (error) {
+          logError(error);
+          throw error;
+        }
       },
       async provideLanguageModelChatResponse(
         model,
@@ -260,63 +292,69 @@ export async function activate(
         progress,
         token,
       ) {
-        await credentials.run(async (session) => {
-          const controller = new AbortController();
-          const subscription = token.onCancellationRequested(() =>
-            controller.abort(),
-          );
-          if (token.isCancellationRequested) controller.abort();
-          const signal = AbortSignal.any([controller.signal, session.signal]);
-          try {
-            await streamChat(
-              `${API_ORIGIN}/v1/chat/completions`,
-              session.key,
-              {
-                model: model.id,
-                messages: toMessages(messages),
-                max_tokens: model.maxOutputTokens,
-                ...(options.tools?.length
-                  ? {
-                      tools: options.tools.map((tool) => ({
-                        type: "function",
-                        function: {
-                          name: tool.name,
-                          description: tool.description,
-                          parameters: tool.inputSchema ?? {
-                            type: "object",
-                            properties: {},
-                          },
-                        },
-                      })),
-                      tool_choice:
-                        options.toolMode ===
-                        vscode.LanguageModelChatToolMode.Required
-                          ? "required"
-                          : "auto",
-                    }
-                  : {}),
-              },
-              signal,
-              (part) => {
-                if (!session.isCurrent() || signal.aborted) return;
-                progress.report(
-                  "text" in part
-                    ? new vscode.LanguageModelTextPart(part.text)
-                    : new vscode.LanguageModelToolCallPart(
-                        part.id,
-                        part.name,
-                        part.input,
-                      ),
-                );
-              },
+        let key: string | undefined;
+        let signal: AbortSignal | undefined;
+        try {
+          await credentials.run(async (session) => {
+            key = session.key;
+            const controller = new AbortController();
+            const subscription = token.onCancellationRequested(() =>
+              controller.abort(),
             );
-          } catch {
-            if (signal.aborted) throw new vscode.CancellationError();
-            throw new Error("Не удалось получить ответ Врата AI.");
-          } finally {
-            subscription.dispose();
-          }
-        });
+            if (token.isCancellationRequested) controller.abort();
+            signal = AbortSignal.any([controller.signal, session.signal]);
+            try {
+              await streamChat(
+                `${API_ORIGIN}/v1/chat/completions`,
+                session.key,
+                {
+                  model: model.id,
+                  messages: toMessages(messages),
+                  max_tokens: model.maxOutputTokens,
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          type: "function",
+                          function: {
+                            name: tool.name,
+                            description: tool.description,
+                            parameters: tool.inputSchema ?? {
+                              type: "object",
+                              properties: {},
+                            },
+                          },
+                        })),
+                        tool_choice:
+                          options.toolMode ===
+                          vscode.LanguageModelChatToolMode.Required
+                            ? "required"
+                            : "auto",
+                      }
+                    : {}),
+                },
+                signal,
+                (part) => {
+                  if (!session.isCurrent() || signal?.aborted) return;
+                  progress.report(
+                    "text" in part
+                      ? new vscode.LanguageModelTextPart(part.text)
+                      : new vscode.LanguageModelToolCallPart(
+                          part.id,
+                          part.name,
+                          part.input,
+                        ),
+                  );
+                },
+              );
+            } finally {
+              subscription.dispose();
+            }
+          });
+        } catch (error) {
+          logError(error, key);
+          if (signal?.aborted) throw new vscode.CancellationError();
+          throw new Error("Не удалось получить ответ Врата AI. Подробности в журнале «Врата AI».");
+        }
       },
     }),
   );

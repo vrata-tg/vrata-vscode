@@ -19,14 +19,6 @@ interface Delta {
     function?: { name?: string; arguments?: string };
   }[];
 }
-function parseJSON(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error("Invalid JSON in gateway stream");
-  }
-}
-
 export async function streamChat(
   endpoint: string,
   key: string,
@@ -58,6 +50,7 @@ export async function streamChat(
   let buffer = "",
     finish: string | undefined,
     done = false;
+  const failures: unknown[] = [];
   try {
     while (!done) {
       const chunk = await reader.read();
@@ -73,11 +66,11 @@ export async function streamChat(
           done = true;
           break;
         }
-        const event = parseJSON(data) as {
+        const event = JSON.parse(data) as {
           error?: unknown;
           choices?: { delta: Delta; finish_reason?: string }[];
         };
-        if (event.error) throw new Error("Gateway stream error");
+        if (event.error) throw new Error("Gateway stream error", { cause: event.error });
         for (const choice of event.choices ?? []) {
           if (choice.finish_reason) finish = choice.finish_reason;
           if (choice.delta?.content) report({ text: choice.delta.content });
@@ -103,14 +96,27 @@ export async function streamChat(
     const parts: Part[] = [...calls.values()].map((call) => {
       if (finish !== "tool_calls" || !call.id || !call.name)
         throw new Error("Invalid gateway tool call");
-      const input: unknown = parseJSON(call.arguments);
+      const input: unknown = JSON.parse(call.arguments);
       if (!input || typeof input !== "object" || Array.isArray(input))
         throw new Error("Invalid gateway tool arguments");
       return { id: call.id, name: call.name, input };
     });
     for (const part of parts) report(part);
+  } catch (error) {
+    failures.push(error);
+    throw error;
   } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } catch (error) {
+      if (!failures.includes(error)) {
+        failures.push(error);
+        throw failures.length === 1
+          ? error
+          : new AggregateError(failures, "Gateway stream cleanup failed");
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 }

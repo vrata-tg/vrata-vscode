@@ -3,13 +3,13 @@
 Устанавливаемое расширение для VS Code **1.104.0+**. Введите существующий
 API-ключ Врата AI: адрес сервиса вводить не требуется.
 
-1. Установите `vrata-ai-0.1.3.vsix` через **Extensions → Install from VSIX…**.
+1. Установите `vrata-ai-0.1.4.vsix` через **Extensions → Install from VSIX…**.
 2. На экране начала работы нажмите **Вставить API-ключ**. Если ключа ещё нет,
    нажмите **Получить ключ в боте**.
 3. Управляйте подключением через **Chat → Manage Models → Врата AI**, строку
    состояния или команду **Врата AI: Управление подключением**.
 
-Выпуск 0.1.3 реализует подключение из
+Выпуск 0.1.4 реализует подключение из
 [задачи #336](https://github.com/v-lebedev/ai-billing-gateway/issues/336).
 **Выбор моделей и баланс пока недоступны**: серверные metadata, каталог и UI
 добавляются в [#337](https://github.com/v-lebedev/ai-billing-gateway/issues/337),
@@ -25,7 +25,8 @@ API-ключ Врата AI: адрес сервиса вводить не тре
 
 Проверка — `GET https://api.vrata.tg/v1/models` с Bearer, без генерации, повторов
 или переходов по redirect. Нулевой баланс не мешает проверке действительного
-ключа. Ошибки не включают ключ, содержимое ответа сервера или сетевую диагностику.
+ключа. Уведомления не включают ключ, содержимое ответа сервера или сетевую диагностику;
+подробности исключений доступны в Output.
 После смены ключа отменяются запросы старой сессии, очищается её кэш и
 уведомляется провайдер; поздние ответы не применяются к новой сессии.
 
@@ -71,7 +72,7 @@ Unit/integration tests покрывают lifecycle, ошибки хранени
 
 ```sh
 code --user-data-dir /tmp/vrata-profile --extensions-dir /tmp/vrata-extensions \
-  --install-extension "$PWD/vrata-ai-0.1.3.vsix"
+  --install-extension "$PWD/vrata-ai-0.1.4.vsix"
 VRATA_HOST_PHASE=write VRATA_HOST_RESULT=/tmp/vrata-write.json code --user-data-dir /tmp/vrata-profile \
   --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
 VRATA_HOST_PHASE=read VRATA_HOST_RESULT=/tmp/vrata-read.json code --user-data-dir /tmp/vrata-profile \
@@ -95,17 +96,19 @@ store для настоящего ключа. Windows/macOS и Remote/WSL пок
 
 ```sh
 VRATA_HOST_VERSION=1.135.0 dbus-run-session -- xvfb-run -a bash test/run-host.sh \
-  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.3.vsix" /tmp/vrata-host-1.135
+  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.4.vsix" /tmp/vrata-host-1.135
 ```
 
 ## Диагностика подключения
 
 Нажмите **Открыть журнал** в уведомлении об ошибке или выполните команду
 **Врата AI: Открыть журнал**. Канал **Врата AI** в Output содержит исходную
-ошибку проверки ключа: сообщение, стек, `cause`, `AggregateError` и дополнительные
-поля, включая неизвестные коды. Списка распознаваемых ошибок нет.
+ошибку с уровнем **error**: сообщение, стек, `cause`, `AggregateError` и дополнительные
+поля, включая неизвестные коды. Исключения перехватываются на уровне активации,
+команд, событий хранилища и методов провайдера. GatewayClient пропускает их
+наверх без подмены и повторного журналирования. Списка распознаваемых ошибок нет.
 
-Точное значение проверяемого API-ключа маскируется как `[REDACTED]`.
+Точные значения доступных обработчику API-ключей (текущего, вводимого и ключа запроса) маскируются как `[REDACTED]`.
 Остальные детали ошибки сохраняются. HTTP-статус записывается отдельно;
 тела HTTP-ответов специально не журналируются, но фрагменты ответа могут быть
 частью исходной ошибки парсера.

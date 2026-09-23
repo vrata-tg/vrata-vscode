@@ -34,6 +34,10 @@ export class Credentials {
     private readonly changed: () => void,
   ) {}
 
+  get key(): string | undefined {
+    return this.session?.key;
+  }
+
   get connected(): boolean {
     return !!this.session;
   }
@@ -85,7 +89,7 @@ export class Credentials {
       catalog = await this.client.models(key, validation.signal);
     } catch (error) {
       if (this.disposed || attempt !== this.attempt)
-        throw new CredentialOperationCancelled();
+        throw new CredentialOperationCancelled("", { cause: error });
       throw error;
     }
     await this.serialize(async () => {
