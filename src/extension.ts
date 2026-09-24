@@ -173,7 +173,7 @@ async function activateWithOutput(
       { modal: true },
       "Удалить ключ",
     );
-    if (answer !== "Удалить люч") return;
+    if (answer !== "Удалить ключ") return;
     await credentials.remove();
     await vscode.window.showInformationMessage(
       "Врата AI отключены.",
