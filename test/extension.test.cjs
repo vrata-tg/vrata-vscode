@@ -9,6 +9,9 @@ test("native commands, masked input, silent discovery and secret events", async 
   const infoLines = [],
     errorLines = [];
   let logShown = 0;
+  let dismissStartupError;
+  let holdStartupError = true;
+  let statusShown = false;
   const executed = [];
   let utilitySettingAvailable = false;
   const values = new Map();
@@ -93,7 +96,12 @@ test("native commands, masked input, silent discovery and secret events", async 
           show: () => logShown++,
         };
       },
-      createStatusBarItem: () => ({ ...disposable, show() {} }),
+      createStatusBarItem: () => ({
+        ...disposable,
+        show() {
+          statusShown = true;
+        },
+      }),
       showQuickPick: async () => {
         manageCount++;
         return undefined;
@@ -112,6 +120,10 @@ test("native commands, masked input, silent discovery and secret events", async 
       },
       showErrorMessage: async (message, action) => {
         errors.push(message);
+        if (holdStartupError)
+          await new Promise((resolve) => {
+            dismissStartupError = resolve;
+          });
         if (action !== undefined) assert.equal(action, "Открыть журнал");
         return action;
       },
@@ -151,12 +163,29 @@ test("native commands, masked input, silent discovery and secret events", async 
       : new Response('{"data":[]}');
   };
   t.after(() => {
+    dismissStartupError?.();
     dismissNotifications.forEach((resolve) => resolve());
     global.fetch = originalFetch;
     context.subscriptions.forEach((item) => item.dispose());
   });
-  await extension.activate(context);
+  let activated = false;
+  const activation = extension.activate(context).then(() => {
+    activated = true;
+  });
   await new Promise(setImmediate);
+  assert.equal(
+    activated,
+    true,
+    "activation must finish while the keyring error notification is open",
+  );
+  assert.ok(provider, "provider must be available before dismissing the error");
+  assert.equal(statusShown, true);
+  assert.equal(logShown, 0);
+  holdStartupError = false;
+  dismissStartupError();
+  await activation;
+  await new Promise(setImmediate);
+  assert.equal(logShown, 1, "Open log action still works after activation");
   assert.match(errorLines.join("\n"), /keyring startup failure/);
   assert.match(logLines.join("\n"), /native keyring cause/);
   assert.match(logLines.join("\n"), /at TestContext/);

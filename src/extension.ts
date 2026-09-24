@@ -244,9 +244,7 @@ async function activateWithOutput(
     await credentials.initialize();
   } catch (error) {
     logError(error);
-    await showError(
-      "Не удалось прочитать ключ Врат AI. Повторите подключение.",
-    );
+    void showError("Не удалось прочитать ключ Врат AI. Повторите подключение.");
   }
   updateStatus();
   status.show();

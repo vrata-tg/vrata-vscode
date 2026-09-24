@@ -12,8 +12,14 @@ export function formatError(
   for (const key of keys
     .filter((key): key is string => !!key)
     .sort((a, b) => b.length - a.length)) {
+    const quoted = inspect(key);
+    const escaped = quoted.slice(1, -1);
+    // Surrounding quotes can make inspect use single quotes and escape apostrophes.
+    const singleQuoted =
+      quoted[0] === "'" ? escaped : escaped.replaceAll("'", "\\'");
     details = details
-      .replaceAll(inspect(key).slice(1, -1), "[REDACTED]")
+      .replaceAll(singleQuoted, "[REDACTED]")
+      .replaceAll(escaped, "[REDACTED]")
       .replaceAll(key, "[REDACTED]");
   }
   return details;

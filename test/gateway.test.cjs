@@ -128,6 +128,17 @@ test("raw diagnostics preserve unknown errors, stacks and nested causes while ma
   }
 });
 
+test("diagnostics mask credentials inside mixed-quote string contexts", () => {
+  const prefix = "double\" single' backtick` key=";
+  for (const key of ["key'with\\slash", "key'\"`with\\slash", "plain-key"]) {
+    const error = { detail: prefix + key, code: "UNKNOWN_FAILURE" };
+    assert.equal(
+      formatError(error, key),
+      formatError({ detail: prefix + "[REDACTED]", code: "UNKNOWN_FAILURE" }),
+    );
+  }
+});
+
 test("HTTP status remains visible and parser/transport exceptions reach the caller unchanged", async () => {
   const cases = [
     [
