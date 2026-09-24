@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,12 +24,13 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run check
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
           name: vrata-ai-vsix
           path: "*.vsix"
+          if-no-files-found: error
 
   compatibility:
     needs: offline
@@ -53,8 +59,14 @@ jobs:
       - name: Install VSIX, activate and test SecretStorage across restart
         env:
           VRATA_HOST_VERSION: ${{ matrix.vscode }}
-        run: dbus-run-session -- xvfb-run -a bash test/run-host.sh "$PWD/VSCode-linux-x64/code" "$PWD/package/vrata-ai-0.1.5.vsix" "$RUNNER_TEMP/vrata-host"
+        run: |
+          packages=("$PWD"/package/*.vsix)
+          test "${#packages[@]}" -eq 1
+          dbus-run-session -- xvfb-run -a bash test/run-host.sh "$PWD/VSCode-linux-x64/code" "${packages[0]}" "$RUNNER_TEMP/vrata-host"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: host-results-${{ matrix.vscode }}
-          path: ${{ runner.temp }}/vrata-host/*.json
+          path: |
+            ${{ runner.temp }}/vrata-host/*.json
+            ${{ runner.temp }}/vrata-host/*.log

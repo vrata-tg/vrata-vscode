@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vrata VS Code Development"
+  short_description: "Develop and verify the Vrata VS Code extension"
+  default_prompt: "Use $vrata-vscode-dev to implement and verify this extension change."

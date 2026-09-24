@@ -1,6 +1,5 @@
 export type Part =
-  | { text: string }
-  | { id: string; name: string; input: object };
+  { text: string } | { id: string; name: string; input: object };
 export interface Message {
   role: "user" | "assistant" | "tool";
   content: string | null;
@@ -70,7 +69,8 @@ export async function streamChat(
           error?: unknown;
           choices?: { delta: Delta; finish_reason?: string }[];
         };
-        if (event.error) throw new Error("Gateway stream error", { cause: event.error });
+        if (event.error)
+          throw new Error("Gateway stream error", { cause: event.error });
         for (const choice of event.choices ?? []) {
           if (choice.finish_reason) finish = choice.finish_reason;
           if (choice.delta?.content) report({ text: choice.delta.content });
@@ -104,19 +104,16 @@ export async function streamChat(
     for (const part of parts) report(part);
   } catch (error) {
     failures.push(error);
-    throw error;
   } finally {
     try {
       await reader.cancel();
     } catch (error) {
-      if (!failures.includes(error)) {
-        failures.push(error);
-        throw failures.length === 1
-          ? error
-          : new AggregateError(failures, "Gateway stream cleanup failed");
-      }
+      if (!failures.includes(error)) failures.push(error);
     } finally {
       reader.releaseLock();
     }
   }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, "Gateway stream cleanup failed");
 }

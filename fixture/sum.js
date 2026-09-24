@@ -1,1 +1,1 @@
-exports.sum = values => values.reduce((total, value) => total - value, 0);
+exports.sum = (values) => values.reduce((total, value) => total - value, 0);

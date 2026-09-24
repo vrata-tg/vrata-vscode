@@ -96,7 +96,10 @@ async function activateWithOutput(
   }
   async function showError(message: string): Promise<void> {
     try {
-      if (await vscode.window.showErrorMessage(message, "Открыть журнал") === "Открыть журнал") {
+      if (
+        (await vscode.window.showErrorMessage(message, "Открыть журнал")) ===
+        "Открыть журнал"
+      ) {
         output.show(true);
       }
     } catch (error) {
@@ -110,11 +113,9 @@ async function activateWithOutput(
     status.tooltip = credentials.connected
       ? "API-ключ сохранён. Управление подключением Врата AI"
       : "Врата AI не подключены. Вставьте API-ключ";
-    void vscode.commands.executeCommand(
-      "setContext",
-      "vrata.connected",
-      credentials.connected,
-    ).then(undefined, (error) => logError(error));
+    void vscode.commands
+      .executeCommand("setContext", "vrata.connected", credentials.connected)
+      .then(undefined, (error) => logError(error));
   }
   function command(id: string, action: (keys: string[]) => unknown): void {
     context.subscriptions.push(
@@ -125,9 +126,10 @@ async function activateWithOutput(
         } catch (error) {
           logError(error, ...keys);
           if (error instanceof CredentialOperationCancelled) return;
-          const message = error instanceof CredentialError
-            ? error.message
-            : "Не удалось выполнить команду Врат AI.";
+          const message =
+            error instanceof CredentialError
+              ? error.message
+              : "Не удалось выполнить команду Врат AI.";
           await showError(message);
         }
       }),
@@ -143,8 +145,7 @@ async function activateWithOutput(
         title: credentials.connected
           ? "Врата AI: заменить API-ключ"
           : "Врата AI: вставить API-ключ",
-        prompt:
-          "Ключ из бота Врата AI в формате sk-***",
+        prompt: "Ключ из бота Врата AI в формате sk-***",
         password: true,
         ignoreFocusOut: true,
         placeHolder: "Вставьте API-ключ",
@@ -160,9 +161,9 @@ async function activateWithOutput(
         },
         () => credentials.replace(value),
       );
-      void vscode.window.showInformationMessage(
-        "API-ключ сохранён.",
-      ).then(undefined, (error) => logError(error, ...keys));
+      void vscode.window
+        .showInformationMessage("API-ключ сохранён.")
+        .then(undefined, (error) => logError(error, ...keys));
     } finally {
       editing = false;
     }
@@ -175,9 +176,7 @@ async function activateWithOutput(
     );
     if (answer !== "Удалить ключ") return;
     await credentials.remove();
-    await vscode.window.showInformationMessage(
-      "Врата AI отключены.",
-    );
+    await vscode.window.showInformationMessage("Врата AI отключены.");
   });
   command("vrata.getApiKey", () =>
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
@@ -245,7 +244,9 @@ async function activateWithOutput(
     await credentials.initialize();
   } catch (error) {
     logError(error);
-    await showError("Не удалось прочитать ключ Врат AI. Повторите подключение.");
+    await showError(
+      "Не удалось прочитать ключ Врат AI. Повторите подключение.",
+    );
   }
   updateStatus();
   status.show();
@@ -261,7 +262,8 @@ async function activateWithOutput(
           if (!options.silent)
             await vscode.commands.executeCommand("vrata.manage");
           // Background discovery never prompts, even if called repeatedly without credentials.
-          if (!credentials.connected || token.isCancellationRequested) return [];
+          if (!credentials.connected || token.isCancellationRequested)
+            return [];
           key = credentials.key;
           await credentials.loadCatalog();
           // #337/#338 supply verified limits/capabilities. Never advertise the spike's guesses.
@@ -353,6 +355,7 @@ async function activateWithOutput(
         } catch (error) {
           logError(error, key);
           if (signal?.aborted) throw new vscode.CancellationError();
+          // eslint-disable-next-line preserve-caught-error -- The original is logged above; its cause may expose a key to the editor.
           throw new Error("Не удалось получить ответ Врат AI.");
         }
       },

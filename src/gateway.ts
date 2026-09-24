@@ -32,7 +32,9 @@ export class GatewayClient {
       !("data" in body) ||
       !Array.isArray(body.data)
     ) {
-      throw new CredentialError("INVALID_CATALOG: в ответе сервера отсутствует массив data с каталогом моделей.");
+      throw new CredentialError(
+        "INVALID_CATALOG: в ответе сервера отсутствует массив data с каталогом моделей.",
+      );
     }
     this.log("Каталог получен, ключ прошёл проверку.");
     return body.data;

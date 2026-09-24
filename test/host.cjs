@@ -86,8 +86,10 @@ exports.run = async () => {
       readonly_requests: calls.length,
       github_session: false,
       node: process.versions.node,
-      utility_setting_available: vscode.workspace
-        .getConfiguration("chat").inspect("byokUtilityModelDefault")?.defaultValue !== undefined,
+      utility_setting_available:
+        vscode.workspace
+          .getConfiguration("chat")
+          .inspect("byokUtilityModelDefault")?.defaultValue !== undefined,
     };
   } finally {
     credentials.dispose();

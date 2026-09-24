@@ -1,6 +1,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { Credentials, SECRET_KEY } = require("../dist/credentials");
+const {
+  Credentials,
+  CredentialOperationCancelled,
+  SECRET_KEY,
+} = require("../dist/credentials");
 
 function fixture(initial) {
   const values = new Map(initial ? [[SECRET_KEY, initial]] : []);
@@ -196,7 +200,10 @@ test("delete during a pending store must not report replacement success", async 
 
 test("discovery reuses a validated empty catalog without checking the key again", async () => {
   const f = fixture();
-  f.client.models = async (key) => { f.reads.push(key); return []; };
+  f.client.models = async (key) => {
+    f.reads.push(key);
+    return [];
+  };
   await f.credentials.replace("new");
   await Promise.all([f.credentials.loadCatalog(), f.credentials.loadCatalog()]);
   await f.credentials.loadCatalog();
@@ -210,12 +217,19 @@ test("restored sessions share catalog loading and retry after a failed request",
   let reject, resolve;
   f.client.models = (key) => {
     f.reads.push(key);
-    return new Promise((yes, no) => { resolve = yes; reject = no; });
+    return new Promise((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
   };
   const first = f.credentials.loadCatalog();
   const second = f.credentials.loadCatalog();
   const failed = Promise.allSettled([first, second]);
-  assert.equal(f.reads.length, 1, "concurrent discovery must share one HTTP request");
+  assert.equal(
+    f.reads.length,
+    1,
+    "concurrent discovery must share one HTTP request",
+  );
   reject(new Error("temporary failure"));
   assert.ok((await failed).every((result) => result.status === "rejected"));
   const retry = f.credentials.loadCatalog();
@@ -230,4 +244,41 @@ test("restored sessions share catalog loading and retry after a failed request",
   await changed;
   assert.deepEqual(f.reads, ["saved", "saved", "external"]);
   assert.deepEqual(f.credentials.catalog, [{ id: "external model" }]);
+});
+
+test("disposal during deletion does not notify disposed subscribers", async () => {
+  const f = fixture("old");
+  await f.credentials.initialize();
+  let finishDelete;
+  f.secrets.delete = () =>
+    new Promise((resolve) => {
+      finishDelete = resolve;
+    });
+  const removal = f.credentials.remove();
+  await new Promise(setImmediate);
+  f.credentials.dispose();
+  const changeCount = f.changes.length;
+  finishDelete();
+  await assert.rejects(removal, CredentialOperationCancelled);
+  assert.equal(f.changes.length, changeCount);
+  assert.equal(f.credentials.connected, false);
+});
+
+test("disposal cancels a queued deletion before touching SecretStorage", async () => {
+  const f = fixture("old");
+  await f.credentials.initialize();
+  let finishRead;
+  f.secrets.get = () =>
+    new Promise((resolve) => {
+      finishRead = resolve;
+    });
+  const reload = f.credentials.reload();
+  await new Promise(setImmediate);
+  const removal = f.credentials.remove();
+  f.credentials.dispose();
+  finishRead("old");
+  await reload;
+  await assert.rejects(removal, CredentialOperationCancelled);
+  assert.equal(f.values.get(SECRET_KEY), "old");
+  assert.deepEqual(f.changes, [true]);
 });

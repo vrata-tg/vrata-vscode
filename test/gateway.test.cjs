@@ -71,7 +71,9 @@ test("real HTTP chain validates with GET only; zero balance and empty catalog ar
 
 test("network errors propagate unchanged and a cancelled request does not start fetch", async () => {
   const failure = Error("secret credential");
-  const client = new GatewayClient(async () => { throw failure; });
+  const client = new GatewayClient(async () => {
+    throw failure;
+  });
   await assert.rejects(
     client.models("key", new AbortController().signal),
     (error) => error === failure,
@@ -89,14 +91,27 @@ test("network errors propagate unchanged and a cancelled request does not start 
 
 test("raw diagnostics preserve unknown errors, stacks and nested causes while masking the key", async () => {
   for (const secret of ["synthetic-sensitive-key", "key'with\\slash"]) {
-    const inner = Object.assign(new Error(`proxy negotiation failed: ${secret}`), {
-      code: "NEW_TRANSPORT_CODE",
-      detail: { credential: secret, stage: "handshake" },
+    const inner = Object.assign(
+      new Error(`proxy negotiation failed: ${secret}`),
+      {
+        code: "NEW_TRANSPORT_CODE",
+        detail: { credential: secret, stage: "handshake" },
+      },
+    );
+    const failure = new TypeError("fetch failed", {
+      cause: new AggregateError([inner], "connection attempts"),
     });
-    const failure = new TypeError("fetch failed", { cause: new AggregateError([inner], "connection attempts") });
     const logs = [];
-    const client = new GatewayClient(async () => { throw failure; }, (line) => logs.push(line));
-    await assert.rejects(client.models(secret, new AbortController().signal), (error) => error === failure);
+    const client = new GatewayClient(
+      async () => {
+        throw failure;
+      },
+      (line) => logs.push(line),
+    );
+    await assert.rejects(
+      client.models(secret, new AbortController().signal),
+      (error) => error === failure,
+    );
     assert.doesNotMatch(logs.join("\n"), /fetch failed|NEW_TRANSPORT_CODE/);
     const output = formatError(failure, secret);
     assert.match(output, /TypeError: fetch failed/);
@@ -107,37 +122,81 @@ test("raw diagnostics preserve unknown errors, stacks and nested causes while ma
     assert.match(output, /gateway.test.cjs/);
     assert.match(output, /\[REDACTED\]/);
     assert.ok(!output.includes(secret));
-    assert.ok(!output.includes(require("node:util").inspect(secret).slice(1, -1)));
+    assert.ok(
+      !output.includes(require("node:util").inspect(secret).slice(1, -1)),
+    );
   }
 });
 
 test("HTTP status remains visible and parser/transport exceptions reach the caller unchanged", async () => {
   const cases = [
-    [async () => new Response("upstream body", { status: 401, statusText: "synthetic-key" }), /HTTP 401/],
+    [
+      async () =>
+        new Response("upstream body", {
+          status: 401,
+          statusText: "synthetic-key",
+        }),
+      /HTTP 401/,
+    ],
     [async () => new Response("upstream body", { status: 503 }), /HTTP 503/],
     [async () => new Response("not json"), /SyntaxError/],
-    [async () => { throw new DOMException("operation expired", "TimeoutError"); }, /TimeoutError\]: operation expired/],
-    [async () => { throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") }); }, /unexpected redirect/],
+    [
+      async () => {
+        throw new DOMException("operation expired", "TimeoutError");
+      },
+      /TimeoutError\]: operation expired/,
+    ],
+    [
+      async () => {
+        throw new TypeError("fetch failed", {
+          cause: new Error("unexpected redirect"),
+        });
+      },
+      /unexpected redirect/,
+    ],
   ];
   for (const [request, expected] of cases) {
     const logs = [];
     const client = new GatewayClient(request, (line) => logs.push(line));
-    await assert.rejects(client.models("synthetic-key", new AbortController().signal), (error) => {
-      assert.match(formatError(error), expected);
-      return true;
-    });
+    await assert.rejects(
+      client.models("synthetic-key", new AbortController().signal),
+      (error) => {
+        assert.match(formatError(error), expected);
+        return true;
+      },
+    );
     assert.doesNotMatch(logs.join("\n"), /synthetic-key/);
   }
 });
 
 test("raw diagnostics support cyclic errors and non-Error throws", async () => {
-  const failure = Object.assign(new Error("unknown original failure"), { code: "FUTURE_ERROR" });
+  const failure = Object.assign(new Error("unknown original failure"), {
+    code: "FUTURE_ERROR",
+  });
   failure.cause = failure;
-  for (const thrown of [failure, { reason: "plain object failure" }, "plain string failure"]) {
+  for (const thrown of [
+    failure,
+    { reason: "plain object failure" },
+    "plain string failure",
+  ]) {
     const logs = [];
-    const client = new GatewayClient(async () => { throw thrown; }, (line) => logs.push(line));
-    await assert.rejects(client.models("synthetic-key", new AbortController().signal), (error) => error === thrown);
-    assert.match(formatError(thrown), /unknown original failure|plain object failure|plain string failure/);
-    assert.doesNotMatch(logs.join("\n"), /unknown original failure|plain object failure|plain string failure/);
+    const client = new GatewayClient(
+      async () => {
+        throw thrown;
+      },
+      (line) => logs.push(line),
+    );
+    await assert.rejects(
+      client.models("synthetic-key", new AbortController().signal),
+      (error) => error === thrown,
+    );
+    assert.match(
+      formatError(thrown),
+      /unknown original failure|plain object failure|plain string failure/,
+    );
+    assert.doesNotMatch(
+      logs.join("\n"),
+      /unknown original failure|plain object failure|plain string failure/,
+    );
   }
 });

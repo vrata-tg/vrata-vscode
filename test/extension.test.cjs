@@ -6,7 +6,8 @@ const { EventEmitter } = require("node:events");
 test("native commands, masked input, silent discovery and secret events", async (t) => {
   const commands = new Map();
   const logLines = [];
-  const infoLines = [], errorLines = [];
+  const infoLines = [],
+    errorLines = [];
   let logShown = 0;
   const executed = [];
   let utilitySettingAvailable = false;
@@ -14,7 +15,9 @@ test("native commands, masked input, silent discovery and secret events", async 
   const errors = [],
     notices = [],
     requests = [];
-  let readFailure = new Error("keyring startup failure", { cause: new Error("native keyring cause") });
+  let readFailure = new Error("keyring startup failure", {
+    cause: new Error("native keyring cause"),
+  });
   let storeFailure, deleteFailure, fetchFailure, contextFailure, infoFailure;
   let holdNotifications = false;
   const dismissNotifications = [];
@@ -52,9 +55,10 @@ test("native commands, masked input, silent discovery and secret events", async 
   const vscode = {
     workspace: {
       getConfiguration: () => ({
-        inspect: () => utilitySettingAvailable
-          ? { defaultValue: "default" }
-          : { key: "chat.byokUtilityModelDefault", defaultValue: undefined },
+        inspect: () =>
+          utilitySettingAvailable
+            ? { defaultValue: "default" }
+            : { key: "chat.byokUtilityModelDefault", defaultValue: undefined },
       }),
     },
     EventEmitter: class {
@@ -76,7 +80,18 @@ test("native commands, masked input, silent discovery and secret events", async 
       createOutputChannel: (name, options) => {
         assert.equal(name, "Врата AI");
         assert.deepEqual(options, { log: true });
-        return { ...disposable, info: (line) => { infoLines.push(line); logLines.push(line); }, error: (line) => { errorLines.push(line); logLines.push(line); }, show: () => logShown++ };
+        return {
+          ...disposable,
+          info: (line) => {
+            infoLines.push(line);
+            logLines.push(line);
+          },
+          error: (line) => {
+            errorLines.push(line);
+            logLines.push(line);
+          },
+          show: () => logShown++,
+        };
       },
       createStatusBarItem: () => ({ ...disposable, show() {} }),
       showQuickPick: async () => {
@@ -92,14 +107,15 @@ test("native commands, masked input, silent discovery and secret events", async 
       showInformationMessage: async (message) => {
         notices.push(message);
         if (infoFailure) throw infoFailure;
-        if (holdNotifications) await new Promise((resolve) => dismissNotifications.push(resolve));
+        if (holdNotifications)
+          await new Promise((resolve) => dismissNotifications.push(resolve));
       },
       showErrorMessage: async (message, action) => {
         errors.push(message);
         if (action !== undefined) assert.equal(action, "Открыть журнал");
         return action;
       },
-      showWarningMessage: async () => "Удалить локальный ключ",
+      showWarningMessage: async (_message, _options, action) => action,
     },
     commands: {
       registerCommand: (id, action) => {
@@ -149,13 +165,21 @@ test("native commands, masked input, silent discovery and secret events", async 
   logLines.length = 0;
   logShown = 0;
   await commands.get("vrata.utilitySettings")();
-  assert.equal(executed.some(([id]) => id === "workbench.action.openSettings"), false,
-    "older editors must not open a setting they do not support");
+  assert.equal(
+    executed.some(([id]) => id === "workbench.action.openSettings"),
+    false,
+    "older editors must not open a setting they do not support",
+  );
   assert.ok(notices.some((message) => message.includes("недоступна")));
   utilitySettingAvailable = true;
   await commands.get("vrata.utilitySettings")();
-  assert.ok(executed.some(([id, setting]) =>
-    id === "workbench.action.openSettings" && setting === "chat.byokUtilityModelDefault"));
+  assert.ok(
+    executed.some(
+      ([id, setting]) =>
+        id === "workbench.action.openSettings" &&
+        setting === "chat.byokUtilityModelDefault",
+    ),
+  );
   for (const silent of [true, true, false]) {
     assert.deepEqual(
       await provider.provideLanguageModelChatInformation({ silent }, {}),
@@ -171,18 +195,32 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(requests.length, 0);
   const discoveryTasks = [];
   provider.onDidChangeLanguageModelChatInformation(() => {
-    discoveryTasks.push(provider.provideLanguageModelChatInformation({ silent: true }, {}));
+    discoveryTasks.push(
+      provider.provideLanguageModelChatInformation({ silent: true }, {}),
+    );
   });
   input = "  arbitrary-format  ";
   holdNotifications = true;
   let firstFinished = false;
-  const firstInsertion = commands.get("vrata.setApiKey")().then(() => { firstFinished = true; });
+  const firstInsertion = commands
+    .get("vrata.setApiKey")()
+    .then(() => {
+      firstFinished = true;
+    });
   await new Promise(setImmediate);
   const firstInputCount = inputCount;
   input = undefined;
   await commands.get("vrata.setApiKey")();
-  assert.equal(inputCount, firstInputCount + 1, "replacement input must open while the success notification remains visible");
-  assert.equal(firstFinished, true, "saving the key must not wait for notification dismissal");
+  assert.equal(
+    inputCount,
+    firstInputCount + 1,
+    "replacement input must open while the success notification remains visible",
+  );
+  assert.equal(
+    firstFinished,
+    true,
+    "saving the key must not wait for notification dismissal",
+  );
   holdNotifications = false;
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
@@ -191,7 +229,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
   ]);
-  assert.equal(requests.length, 1, "discovery must reuse the catalog returned by key validation");
+  assert.equal(
+    requests.length,
+    1,
+    "discovery must reuse the catalog returned by key validation",
+  );
   assert.equal(inputOptions.password, true);
   assert.equal(inputOptions.value, undefined);
   assert.ok(inputOptions.validateInput(" "));
@@ -233,12 +275,17 @@ test("native commands, masked input, silent discovery and secret events", async 
     ),
   );
   assert.ok(
-    !JSON.stringify([...errors, ...notices, ...logLines]).includes("arbitrary-format"),
+    !JSON.stringify([...errors, ...notices, ...logLines]).includes(
+      "arbitrary-format",
+    ),
   );
-  const assertLogged = (pattern) => assert.match(errorLines.join("\n"), pattern);
+  const assertLogged = (pattern) =>
+    assert.match(errorLines.join("\n"), pattern);
   input = "synthetic-new-key";
   storeFailure = new Error(`storage refused ${input}`, {
-    cause: Object.assign(new Error("native storage failure"), { code: "UNKNOWN_STORAGE_CODE" }),
+    cause: Object.assign(new Error("native storage failure"), {
+      code: "UNKNOWN_STORAGE_CODE",
+    }),
   });
   await commands.get("vrata.setApiKey")();
   assertLogged(/storage refused \[REDACTED\]/);
@@ -248,17 +295,29 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.ok(!logLines.join("\n").includes(input));
   storeFailure = undefined;
   fetchFailure = new TypeError("catalog fetch failed", {
-    cause: new AggregateError([Object.assign(new Error(`proxy rejected ${input}`), {
-      code: "NEW_TRANSPORT_CODE", stage: "handshake",
-    })], "connection attempts"),
+    cause: new AggregateError(
+      [
+        Object.assign(new Error(`proxy rejected ${input}`), {
+          code: "NEW_TRANSPORT_CODE",
+          stage: "handshake",
+        }),
+      ],
+      "connection attempts",
+    ),
   });
   await commands.get("vrata.setApiKey")();
   assertLogged(/catalog fetch failed/);
   assertLogged(/NEW_TRANSPORT_CODE/);
   assertLogged(/handshake/);
   assertLogged(/connection attempts/);
-  assert.equal(errorLines.filter((line) => line.includes("catalog fetch failed")).length, 1);
-  assert.doesNotMatch(infoLines.join("\n"), /catalog fetch failed|NEW_TRANSPORT_CODE/);
+  assert.equal(
+    errorLines.filter((line) => line.includes("catalog fetch failed")).length,
+    1,
+  );
+  assert.doesNotMatch(
+    infoLines.join("\n"),
+    /catalog fetch failed|NEW_TRANSPORT_CODE/,
+  );
   fetchFailure = undefined;
   contextFailure = new Error("setContext editor failure");
   infoFailure = new Error("saved notification failed");
@@ -269,13 +328,17 @@ test("native commands, masked input, silent discovery and secret events", async 
   infoFailure = undefined;
   contextFailure = undefined;
 
-  deleteFailure = new Error(`delete refused ${input}`, { cause: new Error("delete cause") });
+  deleteFailure = new Error(`delete refused ${input}`, {
+    cause: new Error("delete cause"),
+  });
   await commands.get("vrata.removeApiKey")();
   assertLogged(/delete refused \[REDACTED\]/);
   assertLogged(/delete cause/);
   deleteFailure = undefined;
 
-  readFailure = new Error("secret event read failure", { cause: new Error("read cause") });
+  readFailure = new Error("secret event read failure", {
+    cause: new Error("read cause"),
+  });
   secretListener({ key: "vrata.apiKey" });
   await new Promise(setImmediate);
   assertLogged(/secret event read failure/);
@@ -283,29 +346,56 @@ test("native commands, masked input, silent discovery and secret events", async 
   readFailure = undefined;
 
   // Errors before the HTTP request (including a disconnected session) must be logged too.
-  const credentials = context.subscriptions.find((item) => typeof item.loadCatalog === "function");
+  const credentials = context.subscriptions.find(
+    (item) => typeof item.loadCatalog === "function",
+  );
   const loadCatalog = credentials.loadCatalog;
-  credentials.loadCatalog = async () => { throw new Error("catalog preparation failed"); };
-  assert.deepEqual(await provider.provideLanguageModelChatInformation({ silent: true }, {}), []);
+  credentials.loadCatalog = async () => {
+    throw new Error("catalog preparation failed");
+  };
+  assert.deepEqual(
+    await provider.provideLanguageModelChatInformation({ silent: true }, {}),
+    [],
+  );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;
 
-  fetchFailure = new Error(`stream failed ${input}`, { cause: new Error("stream socket cause") });
-  const token = { isCancellationRequested: false, onCancellationRequested: () => disposable };
-  await assert.rejects(provider.provideLanguageModelChatResponse(
-    { id: "fixture", maxOutputTokens: 10 }, [], {}, { report() {} }, token,
-  ), /Не удалось получить ответ/);
+  fetchFailure = new Error(`stream failed ${input}`, {
+    cause: new Error("stream socket cause"),
+  });
+  const token = {
+    isCancellationRequested: false,
+    onCancellationRequested: () => disposable,
+  };
+  await assert.rejects(
+    provider.provideLanguageModelChatResponse(
+      { id: "fixture", maxOutputTokens: 10 },
+      [],
+      {},
+      { report() {} },
+      token,
+    ),
+    /Не удалось получить ответ/,
+  );
   assertLogged(/stream failed \[REDACTED\]/);
   assertLogged(/stream socket cause/);
   fetchFailure = undefined;
   await commands.get("vrata.removeApiKey")();
-  await assert.rejects(provider.provideLanguageModelChatResponse(
-    { id: "fixture", maxOutputTokens: 10 }, [], {}, { report() {} }, token,
-  ));
+  await assert.rejects(
+    provider.provideLanguageModelChatResponse(
+      { id: "fixture", maxOutputTokens: 10 },
+      [],
+      {},
+      { report() {} },
+      token,
+    ),
+  );
   assertLogged(/Врата AI не подключены/);
 
   // Non-Error exceptions from editor commands are also useful diagnostics.
-  vscode.workspace.getConfiguration = () => { throw { operation: "read editor config", code: 735 }; };
+  vscode.workspace.getConfiguration = () => {
+    throw { operation: "read editor config", code: 735 };
+  };
   await commands.get("vrata.utilitySettings")();
   assertLogged(/read editor config/);
   assertLogged(/735/);
@@ -316,13 +406,22 @@ test("native commands, masked input, silent discovery and secret events", async 
   await assert.rejects(provider.provideTokenCount({}, cyclicInput), TypeError);
   assertLogged(/circular/);
 
-  vscode.window.showErrorMessage = async () => { throw new Error("notification failed"); };
+  vscode.window.showErrorMessage = async () => {
+    throw new Error("notification failed");
+  };
   await commands.get("vrata.utilitySettings")();
   assertLogged(/notification failed/);
 
-  const activationFailure = new Error("provider registration failed", { cause: new Error("activation cause") });
-  vscode.lm.registerLanguageModelChatProvider = () => { throw activationFailure; };
-  await assert.rejects(extension.activate(context), (error) => error === activationFailure);
+  const activationFailure = new Error("provider registration failed", {
+    cause: new Error("activation cause"),
+  });
+  vscode.lm.registerLanguageModelChatProvider = () => {
+    throw activationFailure;
+  };
+  await assert.rejects(
+    extension.activate(context),
+    (error) => error === activationFailure,
+  );
   assertLogged(/provider registration failed/);
   assertLogged(/activation cause/);
 });

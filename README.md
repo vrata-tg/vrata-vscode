@@ -58,9 +58,20 @@ API-ключ Врата AI: адрес сервиса вводить не тре
 
 ```sh
 npm ci
-npm test
+npm run check
 npm run package
 ```
+
+Для разработки нужен Node.js 22. `npm run check` выполняет проверку типов,
+ESLint, проверку форматирования и тесты. `npm run format` применяет Prettier.
+Нажмите **F5** для запуска Extension Development Host с папкой `fixture`:
+задача `npm: watch` пересобирает TypeScript, доступны точки останова.
+
+Инструкции для агентов — в [AGENTS.md](AGENTS.md); локальные skills
+`vrata-vscode-dev` и `vrata-vscode-review` — в `.agents/skills`.
+CI повторяет `check`, собирает VSIX и проверяет его в трёх версиях VS Code.
+Workflow можно запустить вручную; JSON-результаты и логи host tests
+сохраняются и при ошибке.
 
 Пакет TypeScript находится в корне этого репозитория. Stable API, vendor `vrata`,
 extension ID `vrata.vrata-ai`; без proposed API и собственного webview-чата.

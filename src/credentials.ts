@@ -108,7 +108,9 @@ export class Credentials {
     if (this.disposed) throw new CredentialOperationCancelled();
     this.cancelValidation();
     await this.serialize(async () => {
+      if (this.disposed) throw new CredentialOperationCancelled();
       await this.secrets.delete(SECRET_KEY);
+      if (this.disposed) throw new CredentialOperationCancelled();
       this.switchSession();
     });
   }
