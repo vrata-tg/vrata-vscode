@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -16,7 +21,52 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run check
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vrata-ai-vsix
+          path: "*.vsix"
+          if-no-files-found: error
+
+  compatibility:
+    needs: offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        vscode: ["1.104.0", "1.135.0", "1.138.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: vrata-ai-vsix
+          path: package
+      - run: sudo apt-get update -qq && sudo apt-get install -y xvfb xauth gnome-keyring dbus-x11
+      - name: Download stable VS Code
+        env:
+          VSCODE_VERSION: ${{ matrix.vscode }}
+        run: |
+          curl -fL --retry 3 "https://update.code.visualstudio.com/$VSCODE_VERSION/linux-x64/stable" -o vscode.tar.gz
+          tar -xzf vscode.tar.gz
+      - name: Install VSIX, activate and test SecretStorage across restart
+        env:
+          VRATA_HOST_VERSION: ${{ matrix.vscode }}
+        run: |
+          packages=("$PWD"/package/*.vsix)
+          test "${#packages[@]}" -eq 1
+          dbus-run-session -- xvfb-run -a bash test/run-host.sh "$PWD/VSCode-linux-x64/code" "${packages[0]}" "$RUNNER_TEMP/vrata-host"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-results-${{ matrix.vscode }}
+          path: |
+            ${{ runner.temp }}/vrata-host/*.json
+            ${{ runner.temp }}/vrata-host/*.log

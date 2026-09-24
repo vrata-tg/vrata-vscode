@@ -132,13 +132,94 @@ test("cancellation closes the HTTP request without retry", async (t) => {
   await disconnected;
   assert.equal(calls, 1);
 });
-test("malformed JSON is sanitized and incomplete tools are not executed", async (t) => {
+test("malformed JSON propagates the original parser exception", async (t) => {
   const url = await server(t, (req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.end("data: {private payload}\n\n");
   });
   await assert.rejects(
     streamChat(url, "test", request, new AbortController().signal, () => {}),
-    { message: "Invalid JSON in gateway stream" },
+    (error) => {
+      assert.ok(error instanceof SyntaxError);
+      assert.match(error.stack, /JSON.parse/);
+      return true;
+    },
   );
+});
+
+test("stream error objects remain available in the exception cause", async (t) => {
+  const upstream = {
+    message: "new upstream failure",
+    code: "NEW_CODE",
+    detail: { stage: "routing" },
+  };
+  const url = await server(t, (_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.end(`data: ${JSON.stringify({ error: upstream })}\n\n`);
+  });
+  await assert.rejects(
+    streamChat(url, "test", request, new AbortController().signal, () => {}),
+    (error) => {
+      assert.deepEqual(error.cause, upstream);
+      return true;
+    },
+  );
+});
+
+test("stream cleanup errors propagate without hiding the primary failure", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  const primary = new Error("read failure");
+  const cleanup = new Error("cancel failure");
+  for (const [readFailure, cancelFailure] of [
+    [undefined, cleanup],
+    [primary, cleanup],
+    [primary, primary],
+  ]) {
+    let released = false;
+    global.fetch = async () => ({
+      ok: true,
+      body: {
+        pipeThrough: () => ({
+          getReader: () => ({
+            read: async () => {
+              if (readFailure) throw readFailure;
+              return {
+                done: false,
+                value:
+                  'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\ndata: [DONE]\n',
+              };
+            },
+            cancel: async () => {
+              throw cancelFailure;
+            },
+            releaseLock: () => {
+              released = true;
+            },
+          }),
+        }),
+      },
+    });
+    await assert.rejects(
+      streamChat(
+        "http://fixture",
+        "test",
+        request,
+        new AbortController().signal,
+        () => {},
+      ),
+      (error) => {
+        if (readFailure && readFailure !== cancelFailure) {
+          assert.ok(error instanceof AggregateError);
+          assert.deepEqual(error.errors, [readFailure, cancelFailure]);
+        } else {
+          assert.equal(error, cancelFailure);
+        }
+        return true;
+      },
+    );
+    assert.equal(released, true);
+  }
 });

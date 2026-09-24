@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.vsix
+package-lock.json
+
+# Preserve vendored skill resources; see .agents/VENDORED.md.
+.agents/skills/ce-plan/
+.agents/skills/ce-doc-review/
+.agents/skills/hardening-menu/
+.agents/skills/ce-work/
+.agents/skills/ce-simplify-code/
+.agents/skills/ce-code-review/
+.agents/skills/compound-engineering/
+.agents/skills/github-pr-workflow/
