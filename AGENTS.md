@@ -6,10 +6,13 @@ Use Node.js 22 and `npm ci`. Read `package.json` for the commands and README for
 host-test prerequisites. Run `npm run check` and `npm run package` before shipping.
 Use F5 to launch the extension with the fixture workspace and TypeScript watch.
 
-Repository skills (read the file directly if your agent does not discover them):
-
-- [vrata-vscode-dev](.agents/skills/vrata-vscode-dev/SKILL.md): implementation, debugging and verification.
-- [vrata-vscode-review](.agents/skills/vrata-vscode-review/SKILL.md): review and behavior-preserving cleanup.
+The development workflow is adapted from the main `ai-billing-gateway`
+repository. Read [.agents/skills/vrata-vscode-dev/SKILL.md](.agents/skills/vrata-vscode-dev/SKILL.md)
+for implementation, planning, review, simplification and delivery. It owns the
+sequence; this file owns extension invariants. Read only the selected stage's
+package. [.agents/README.md](.agents/README.md) lists the vendored packages and
+maps their tools to the available client; [.agents/PROMPTS.md](.agents/PROMPTS.md)
+provides direct entry prompts.
 
 ## Boundaries
 

@@ -14,3 +14,5 @@ AGENTS.md
 eslint.config.mjs
 .prettier*
 **/*.map
+CLAUDE.md
+GEMINI.md

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Vrata VS Code Review"
-  short_description: "Review and simplify Vrata extension changes"
-  default_prompt: "Use $vrata-vscode-review to review this diff and simplify safe duplication."

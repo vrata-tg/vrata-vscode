@@ -67,8 +67,9 @@ ESLint, проверку форматирования и тесты. `npm run fo
 Нажмите **F5** для запуска Extension Development Host с папкой `fixture`:
 задача `npm: watch` пересобирает TypeScript, доступны точки останова.
 
-Инструкции для агентов — в [AGENTS.md](AGENTS.md); локальные skills
-`vrata-vscode-dev` и `vrata-vscode-review` — в `.agents/skills`.
+Инструкции для агентов — в [AGENTS.md](AGENTS.md); [пакет skills](.agents/README.md) перенесён из основного репозитория
+`ai-billing-gateway`. `vrata-vscode-dev` задаёт маршрут разработки, а planning,
+review, simplification и GitHub workflow используют полные локальные пакеты.
 CI повторяет `check`, собирает VSIX и проверяет его в трёх версиях VS Code.
 Workflow можно запустить вручную; JSON-результаты и логи host tests
 сохраняются и при ошибке.
