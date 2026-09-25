@@ -1,4 +1,4 @@
-export const API_ORIGIN = "https://api.vrata.tg";
+export const API_ORIGIN = "https://llm-billing-staging.ai.vladimirlebe.dev;
 export const BOT_URL = "https://vrata.tg/bot";
 
 export class CredentialError extends Error {}
