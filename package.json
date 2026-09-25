@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -35,6 +35,11 @@
       {
         "command": "vrata.removeApiKey",
         "title": "Удалить локальный ключ",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.refreshModels",
+        "title": "Обновить список моделей",
         "category": "Врата AI"
       },
       {

@@ -17,12 +17,17 @@ interface Session {
   key: string;
   controller: AbortController;
   catalog?: readonly unknown[];
+  catalogLoadedAt?: number;
+  catalogRetryAt?: number;
+  catalogFailed?: boolean;
   catalogRequest?: Promise<void>;
   cache: Map<string, unknown>;
 }
 
 /** A request and its account-scoped cache belong to exactly one credential session. */
 export class Credentials {
+  static readonly catalogTtlMs = 5 * 60_000;
+  static readonly catalogRetryMs = 60_000;
   private session?: Session;
   private queue: Promise<unknown> = Promise.resolve();
   private attempt = 0;
@@ -33,6 +38,7 @@ export class Credentials {
     private readonly secrets: Secrets,
     private readonly client: CatalogClient,
     private readonly changed: () => void,
+    private readonly now: () => number = Date.now,
   ) {}
 
   get key(): string | undefined {
@@ -44,6 +50,23 @@ export class Credentials {
   }
   get catalog(): readonly unknown[] {
     return this.session?.catalog ?? [];
+  }
+  get catalogLoaded(): boolean {
+    return this.session?.catalog !== undefined;
+  }
+  get catalogStale(): boolean {
+    const session = this.session;
+    return (
+      !!session?.catalog &&
+      (session.catalogFailed === true ||
+        session.catalogLoadedAt === undefined ||
+        this.now() - session.catalogLoadedAt >= Credentials.catalogTtlMs)
+    );
+  }
+  get catalogUnavailable(): boolean {
+    return (
+      this.session?.catalogFailed === true && this.session.catalog === undefined
+    );
   }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -74,7 +97,13 @@ export class Credentials {
     this.session?.controller.abort();
     this.session?.cache.clear();
     this.session = key
-      ? { key, catalog, controller: new AbortController(), cache: new Map() }
+      ? {
+          key,
+          catalog,
+          catalogLoadedAt: catalog === undefined ? undefined : this.now(),
+          controller: new AbortController(),
+          cache: new Map(),
+        }
       : undefined;
     this.changed();
   }
@@ -142,13 +171,41 @@ export class Credentials {
     return result;
   }
 
-  async loadCatalog(): Promise<void> {
+  async loadCatalog(force = false): Promise<void> {
     const session = this.session;
-    // Validation already supplies a catalog, including a valid empty one.
-    if (!session || session.catalog !== undefined) return;
+    if (!session) return;
+    const now = this.now();
+    if (
+      !force &&
+      !session.catalogFailed &&
+      session.catalogLoadedAt !== undefined &&
+      now - session.catalogLoadedAt < Credentials.catalogTtlMs
+    )
+      return;
+    if (
+      !force &&
+      session.catalogRetryAt !== undefined &&
+      now < session.catalogRetryAt
+    )
+      return;
     session.catalogRequest ??= this.run(async (active) => {
-      const catalog = await this.client.models(active.key, active.signal);
-      if (active.isCurrent()) session.catalog = catalog;
+      try {
+        const catalog = await this.client.models(active.key, active.signal);
+        if (active.isCurrent()) {
+          session.catalog = catalog;
+          session.catalogLoadedAt = this.now();
+          session.catalogRetryAt = undefined;
+          session.catalogFailed = false;
+          this.changed();
+        }
+      } catch (error) {
+        if (active.isCurrent()) {
+          session.catalogRetryAt = this.now() + Credentials.catalogRetryMs;
+          session.catalogFailed = true;
+          this.changed();
+        }
+        throw error;
+      }
     }).finally(() => {
       session.catalogRequest = undefined;
     });

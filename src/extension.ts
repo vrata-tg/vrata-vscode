@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { formatError } from "./diagnostics";
 import { Message, streamChat } from "./transport";
+import { projectCatalog } from "./catalog";
+import { estimateTokens } from "./token-count";
 import {
   CredentialOperationCancelled,
   Credentials,
@@ -107,11 +109,16 @@ async function activateWithOutput(
     }
   }
   function updateStatus(): void {
+    const { unavailable } = projectCatalog(credentials.catalog);
     status.text = credentials.connected
       ? "$(key) Врата AI"
       : "$(plug) Врата AI: подключить";
     status.tooltip = credentials.connected
-      ? "API-ключ сохранён. Управление подключением Врата AI"
+      ? credentials.catalogUnavailable
+        ? "Каталог Врат AI недоступен. Откройте управление и обновите список моделей."
+        : `API-ключ сохранён. Управление подключением Врата AI${
+            credentials.catalogStale ? ". Каталог устарел." : ""
+          }${credentials.catalogLoaded && !credentials.catalog.length ? "\nСервер не вернул моделей, разрешённых этому ключу." : ""}${unavailable.length ? `\nНе показываются модели: ${unavailable.join("; ")}` : ""}`
       : "Врата AI не подключены. Вставьте API-ключ";
     void vscode.commands
       .executeCommand("setContext", "vrata.connected", credentials.connected)
@@ -162,7 +169,9 @@ async function activateWithOutput(
         () => credentials.replace(value),
       );
       void vscode.window
-        .showInformationMessage("API-ключ сохранён.")
+        .showInformationMessage(
+          "API-ключ сохранён. Выберите модель Врат AI в меню моделей чата (Chat → Manage Models).",
+        )
         .then(undefined, (error) => logError(error, ...keys));
     } finally {
       editing = false;
@@ -177,6 +186,16 @@ async function activateWithOutput(
     if (answer !== "Удалить ключ") return;
     await credentials.remove();
     await vscode.window.showInformationMessage("Врата AI отключены.");
+  });
+  command("vrata.refreshModels", async () => {
+    if (!credentials.connected) return;
+    await credentials.loadCatalog(true);
+    const { models, unavailable } = projectCatalog(credentials.catalog);
+    await vscode.window.showInformationMessage(
+      `Каталог Врат AI обновлён. Доступно моделей: ${models.length}.${
+        unavailable.length ? ` Не показываются: ${unavailable.join("; ")}` : ""
+      }`,
+    );
   });
   command("vrata.getApiKey", () =>
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
@@ -213,7 +232,13 @@ async function activateWithOutput(
         },
         { label: "Получить ключ в боте", command: "vrata.getApiKey" },
         ...(credentials.connected
-          ? [{ label: "Удалить ключ", command: "vrata.removeApiKey" }]
+          ? [
+              {
+                label: "Обновить список моделей",
+                command: "vrata.refreshModels",
+              },
+              { label: "Удалить ключ", command: "vrata.removeApiKey" },
+            ]
           : []),
         { label: "Открыть журнал", command: "vrata.showLogs" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
@@ -264,21 +289,26 @@ async function activateWithOutput(
             return [];
           key = credentials.key;
           await credentials.loadCatalog();
-          // #337/#338 supply verified limits/capabilities. Never advertise the spike's guesses.
-          return [];
         } catch (error) {
           logError(error, key);
-          return [];
         }
+        if (token.isCancellationRequested) return [];
+        const { models } = projectCatalog(credentials.catalog);
+        return models.map((model) =>
+          credentials.catalogStale
+            ? {
+                ...model,
+                detail: "Каталог устарел",
+                tooltip:
+                  "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
+              }
+            : model,
+        );
       },
       async provideTokenCount(_model, input) {
         try {
-          // Approximate transport helper; replaced by catalog/token counting work in #338.
-          return Math.ceil(
-            Buffer.byteLength(
-              typeof input === "string" ? input : JSON.stringify(input),
-              "utf8",
-            ) / 3,
+          return estimateTokens(
+            typeof input === "string" ? input : toMessages([input]),
           );
         } catch (error) {
           logError(error);

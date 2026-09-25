@@ -7,6 +7,7 @@ const {
 } = require("../dist/credentials");
 
 function fixture(initial) {
+  let now = 0;
   const values = new Map(initial ? [[SECRET_KEY, initial]] : []);
   const secrets = {
     get: async (name) => values.get(name),
@@ -26,10 +27,23 @@ function fixture(initial) {
     },
   };
   const changes = [];
-  const credentials = new Credentials(secrets, client, () =>
-    changes.push(credentials.connected),
+  const credentials = new Credentials(
+    secrets,
+    client,
+    () => changes.push(credentials.connected),
+    () => now,
   );
-  return { credentials, secrets, values, reads, changes, client };
+  return {
+    credentials,
+    secrets,
+    values,
+    reads,
+    changes,
+    client,
+    advance: (milliseconds) => {
+      now += milliseconds;
+    },
+  };
 }
 
 test("trim, validate read-only, persist and restore arbitrary-format key", async () => {
@@ -211,7 +225,7 @@ test("discovery reuses a validated empty catalog without checking the key again"
   assert.deepEqual(f.credentials.catalog, []);
 });
 
-test("restored sessions share catalog loading and retry after a failed request", async () => {
+test("restored sessions share loading and back off after a failed request", async () => {
   const f = fixture("saved");
   await f.credentials.initialize();
   let reject, resolve;
@@ -232,7 +246,14 @@ test("restored sessions share catalog loading and retry after a failed request",
   );
   reject(new Error("temporary failure"));
   assert.ok((await failed).every((result) => result.status === "rejected"));
-  const retry = f.credentials.loadCatalog();
+  assert.equal(f.credentials.catalogUnavailable, true);
+  await f.credentials.loadCatalog();
+  assert.equal(
+    f.reads.length,
+    1,
+    "silent discovery must respect the retry delay",
+  );
+  const retry = f.credentials.loadCatalog(true);
   resolve([]);
   await retry;
   await f.credentials.loadCatalog();
@@ -244,6 +265,32 @@ test("restored sessions share catalog loading and retry after a failed request",
   await changed;
   assert.deepEqual(f.reads, ["saved", "saved", "external"]);
   assert.deepEqual(f.credentials.catalog, [{ id: "external model" }]);
+});
+
+test("TTL refresh marks only the same key's old catalog stale after failure", async () => {
+  const f = fixture();
+  await f.credentials.replace("first");
+  assert.equal(f.credentials.catalogStale, false);
+  f.advance(Credentials.catalogTtlMs);
+  f.client.models = async () => {
+    throw Error("offline");
+  };
+  await assert.rejects(f.credentials.loadCatalog(), /offline/);
+  assert.equal(f.credentials.catalogStale, true);
+  assert.deepEqual(f.credentials.catalog, [{ id: "first" }]);
+  await f.credentials.loadCatalog();
+  assert.deepEqual(f.reads, ["first"]);
+  f.advance(Credentials.catalogRetryMs);
+  f.client.models = async (key) => {
+    f.reads.push(key);
+    return [{ id: `${key}-updated` }];
+  };
+  await f.credentials.loadCatalog();
+  assert.equal(f.credentials.catalogStale, false);
+  assert.deepEqual(f.credentials.catalog, [{ id: "first-updated" }]);
+  await f.credentials.replace("second");
+  assert.deepEqual(f.credentials.catalog, [{ id: "second-updated" }]);
+  assert.equal(f.credentials.catalogStale, false);
 });
 
 test("disposal during deletion does not notify disposed subscribers", async () => {

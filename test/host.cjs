@@ -17,6 +17,7 @@ exports.run = async () => {
     "manage",
     "setApiKey",
     "removeApiKey",
+    "refreshModels",
     "getApiKey",
     "openWalkthrough",
     "showLogs",

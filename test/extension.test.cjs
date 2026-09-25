@@ -56,6 +56,22 @@ test("native commands, masked input, silent discovery and secret events", async 
     },
   };
   const vscode = {
+    LanguageModelChatMessageRole: { Assistant: 2 },
+    LanguageModelTextPart: class {
+      constructor(value) {
+        this.value = value;
+      }
+    },
+    LanguageModelToolCallPart: class {
+      constructor(callId, name, input) {
+        Object.assign(this, { callId, name, input });
+      }
+    },
+    LanguageModelToolResultPart: class {
+      constructor(callId, content) {
+        Object.assign(this, { callId, content });
+      }
+    },
     workspace: {
       getConfiguration: () => ({
         inspect: () =>
@@ -160,7 +176,24 @@ test("native commands, masked input, silent discovery and secret events", async 
     if (fetchFailure) throw fetchFailure;
     return options.headers.Authorization === "Bearer invalid"
       ? new Response('{"error":{"message":"private data"}}', { status: 401 })
-      : new Response('{"data":[]}');
+      : new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "gpt-5.6-terra",
+                gateway_metadata: {
+                  name: "gpt-5.6-terra",
+                  family: "gpt",
+                  protocol: "openai",
+                  max_input_tokens: 120000,
+                  max_output_tokens: 8000,
+                  supports_tools: true,
+                  verified_transport: "chat_completions",
+                },
+              },
+            ],
+          }),
+        );
   };
   t.after(() => {
     dismissStartupError?.();
@@ -254,10 +287,16 @@ test("native commands, masked input, silent discovery and secret events", async 
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
   await Promise.all(discoveryTasks);
-  await Promise.all([
+  const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
   ]);
+  assert.deepEqual(
+    discovered.map((models) => models.map((model) => model.id)),
+    [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
+  );
+  assert.equal(discovered[0][0].maxInputTokens, 120000);
+  assert.equal(discovered[0][0].capabilities.imageInput, false);
   assert.equal(
     requests.length,
     1,
@@ -291,12 +330,16 @@ test("native commands, masked input, silent discovery and secret events", async 
     1,
     "self secret event must not invalidate the new account twice",
   );
+  const beforeRefresh = requests.length;
+  await commands.get("vrata.refreshModels")();
+  assert.equal(requests.length, beforeRefresh + 1);
+  assert.equal(changes, 2);
   await commands.get("vrata.removeApiKey")();
   assert.equal(values.size, 0);
   const requestCount = requests.length;
   await provider.provideLanguageModelChatInformation({ silent: true }, {});
   assert.equal(requests.length, requestCount);
-  assert.equal(changes, 2);
+  assert.equal(changes, 3);
   assert.ok(
     !JSON.stringify([...errors, ...notices, ...logLines]).includes(
       "arbitrary-format",
@@ -377,8 +420,10 @@ test("native commands, masked input, silent discovery and secret events", async 
     throw new Error("catalog preparation failed");
   };
   assert.deepEqual(
-    await provider.provideLanguageModelChatInformation({ silent: true }, {}),
-    [],
+    (
+      await provider.provideLanguageModelChatInformation({ silent: true }, {})
+    ).map((model) => model.id),
+    ["gpt-5.6-terra"],
   );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;
@@ -392,7 +437,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   };
   await assert.rejects(
     provider.provideLanguageModelChatResponse(
-      { id: "fixture", maxOutputTokens: 10 },
+      discovered[0][0],
       [],
       {},
       { report() {} },
@@ -400,6 +445,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     ),
     /Не удалось получить ответ/,
   );
+  assert.equal(JSON.parse(requests.at(-1).options.body).model, "gpt-5.6-terra");
   assertLogged(/stream failed \[REDACTED\]/);
   assertLogged(/stream socket cause/);
   fetchFailure = undefined;
@@ -424,10 +470,31 @@ test("native commands, masked input, silent discovery and secret events", async 
   assertLogged(/735/);
   assert.ok(!JSON.stringify([...errors, ...logLines]).includes(input));
 
-  const cyclicInput = [];
-  cyclicInput.push(cyclicInput);
-  await assert.rejects(provider.provideTokenCount({}, cyclicInput), TypeError);
+  const cyclicInput = {};
+  cyclicInput.self = cyclicInput;
+  await assert.rejects(
+    provider.provideTokenCount(
+      {},
+      {
+        role: vscode.LanguageModelChatMessageRole.Assistant,
+        content: [
+          new vscode.LanguageModelToolCallPart("call", "run", cyclicInput),
+        ],
+      },
+    ),
+    TypeError,
+  );
   assertLogged(/circular/);
+  const message = {
+    role: vscode.LanguageModelChatMessageRole.Assistant,
+    content: [
+      new vscode.LanguageModelToolCallPart("call", "run", { path: "тест.js" }),
+    ],
+  };
+  assert.ok(
+    (await provider.provideTokenCount({}, message)) >
+      (await provider.provideTokenCount({}, "run")),
+  );
 
   vscode.window.showErrorMessage = async () => {
     throw new Error("notification failed");
