@@ -30,8 +30,10 @@ test("native commands, masked input, silent discovery and secret events", async 
     manageCount = 0,
     provider,
     secretListener;
+  let copied;
   const disposable = { dispose() {} };
   const context = {
+    extension: { packageJSON: { version: "0.1.6" } },
     subscriptions: [],
     globalState: { get: () => true },
     secrets: {
@@ -56,6 +58,14 @@ test("native commands, masked input, silent discovery and secret events", async 
     },
   };
   const vscode = {
+    version: "1.104.0",
+    env: {
+      clipboard: {
+        writeText: async (value) => {
+          copied = value;
+        },
+      },
+    },
     LanguageModelChatMessageRole: { Assistant: 2 },
     LanguageModelTextPart: class {
       constructor(value) {
@@ -171,27 +181,82 @@ test("native commands, masked input, silent discovery and secret events", async 
   const extension = require("../dist/extension");
   Module._load = originalLoad;
   const originalFetch = global.fetch;
+  let directMessages = false;
   global.fetch = async (url, options) => {
     requests.push({ url, options });
     if (fetchFailure) throw fetchFailure;
+    if (directMessages && url.endsWith("/v1/messages"))
+      return new Response(
+        'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' +
+          'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}\n\n' +
+          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ready"}}\n\n' +
+          'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n' +
+          'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n' +
+          'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      );
+    if (url.endsWith("/v1/account"))
+      return new Response(
+        JSON.stringify({
+          checked_at: "2026-09-25T00:00:00Z",
+          balance: {
+            currency: "RUB",
+            unit: "coin_atoms",
+            paid_available: "0",
+            promo_available: "0",
+            reserved: "0",
+            spendable: "0",
+          },
+          quota: {
+            currency: "RUB",
+            unit: "coin_atoms",
+            limit: null,
+            remaining: null,
+          },
+        }),
+      );
+    if (directMessages)
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "claude-fable-5",
+              gateway_metadata: {
+                name: "claude-fable-5",
+                family: "claude",
+                protocol: options.headers["Anthropic-Version"]
+                  ? "anthropic"
+                  : "openai",
+                verified_transport: options.headers["Anthropic-Version"]
+                  ? "messages"
+                  : "chat_completions",
+                max_input_tokens: 100000,
+                max_output_tokens: 4096,
+                supports_tools: true,
+              },
+            },
+          ],
+        }),
+      );
     return options.headers.Authorization === "Bearer invalid"
       ? new Response('{"error":{"message":"private data"}}', { status: 401 })
       : new Response(
           JSON.stringify({
-            data: [
-              {
-                id: "gpt-5.6-terra",
-                gateway_metadata: {
-                  name: "gpt-5.6-terra",
-                  family: "gpt",
-                  protocol: "openai",
-                  max_input_tokens: 120000,
-                  max_output_tokens: 8000,
-                  supports_tools: true,
-                  verified_transport: "chat_completions",
-                },
-              },
-            ],
+            data: options.headers["Anthropic-Version"]
+              ? []
+              : [
+                  {
+                    id: "gpt-5.6-terra",
+                    gateway_metadata: {
+                      name: "gpt-5.6-terra",
+                      family: "gpt",
+                      protocol: "openai",
+                      max_input_tokens: 120000,
+                      max_output_tokens: 8000,
+                      supports_tools: true,
+                      verified_transport: "chat_completions",
+                    },
+                  },
+                ],
           }),
         );
   };
@@ -299,7 +364,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(discovered[0][0].capabilities.imageInput, false);
   assert.equal(
     requests.length,
-    1,
+    3,
     "discovery must reuse the catalog returned by key validation",
   );
   assert.equal(inputOptions.password, true);
@@ -310,7 +375,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 3);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
@@ -332,7 +397,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   );
   const beforeRefresh = requests.length;
   await commands.get("vrata.refreshModels")();
-  assert.equal(requests.length, beforeRefresh + 1);
+  assert.equal(requests.length, beforeRefresh + 2);
   assert.equal(changes, 2);
   await commands.get("vrata.removeApiKey")();
   assert.equal(values.size, 0);
@@ -443,12 +508,39 @@ test("native commands, masked input, silent discovery and secret events", async 
       { report() {} },
       token,
     ),
-    /Не удалось получить ответ/,
+    /Нет связи с Вратами AI/,
   );
-  assert.equal(JSON.parse(requests.at(-1).options.body).model, "gpt-5.6-terra");
-  assertLogged(/stream failed \[REDACTED\]/);
-  assertLogged(/stream socket cause/);
+  assert.equal(
+    JSON.parse(
+      requests.findLast((request) => request.options.method === "POST").options
+        .body,
+    ).model,
+    "gpt-5.6-terra",
+  );
+  assertLogged(/network/);
   fetchFailure = undefined;
+  directMessages = true;
+  await commands.get("vrata.refreshModels")();
+  const [claude] = await provider.provideLanguageModelChatInformation(
+    { silent: true },
+    {},
+  );
+  const directParts = [];
+  await provider.provideLanguageModelChatResponse(
+    claude,
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    {},
+    { report: (part) => directParts.push(part.value) },
+    token,
+  );
+  assert.deepEqual(directParts, ["ready"]);
+  assert.match(
+    requests.findLast((request) => request.options.method === "POST").url,
+    /\/v1\/messages$/,
+  );
+  await commands.get("vrata.copyDiagnostics")();
+  assert.match(copied, /Модель: claude-fable-5/);
+  assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
   await commands.get("vrata.removeApiKey")();
   await assert.rejects(
     provider.provideLanguageModelChatResponse(

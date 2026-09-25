@@ -70,6 +70,75 @@ test("streams split UTF-8 text and interleaved tool arguments exactly once", asy
     { id: "b", name: "run", input: { cmd: "test" } },
   ]);
 });
+test("Chat Completions carries tool results through two iterations", async (t) => {
+  const bodies = [];
+  const url = await server(t, async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    bodies.push(JSON.parse(raw));
+    const round = bodies.length;
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    const event =
+      round < 3
+        ? {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: `call-${round}`,
+                      function: {
+                        name: "read",
+                        arguments: `{"round":${round}}`,
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          }
+        : { choices: [{ delta: { content: "done" }, finish_reason: "stop" }] };
+    res.end(`data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`);
+  });
+  const messages = [{ role: "user", content: "start" }];
+  for (let round = 1; round <= 3; round++) {
+    const parts = [];
+    await streamChat(
+      url,
+      "test",
+      { model: "fixture", messages, max_tokens: 32 },
+      new AbortController().signal,
+      (part) => parts.push(part),
+    );
+    if (round < 3) {
+      const call = parts[0];
+      assert.deepEqual(call.input, { round });
+      messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: call.id,
+            type: "function",
+            function: {
+              name: call.name,
+              arguments: JSON.stringify(call.input),
+            },
+          },
+        ],
+      });
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: `result-${round}`,
+      });
+    } else assert.deepEqual(parts, [{ text: "done" }]);
+  }
+  assert.equal(bodies[1].messages.at(-1).tool_call_id, "call-1");
+  assert.equal(bodies[2].messages.at(-1).tool_call_id, "call-2");
+});
 test("does not retry HTTP failure or expose an upstream body", async (t) => {
   let calls = 0;
   const url = await server(t, (req, res) => {
@@ -79,7 +148,7 @@ test("does not retry HTTP failure or expose an upstream body", async (t) => {
   });
   await assert.rejects(
     streamChat(url, "test", request, new AbortController().signal, () => {}),
-    { message: "Gateway HTTP 502" },
+    { code: "service_error", status: 502 },
   );
   assert.equal(calls, 1);
 });
@@ -92,7 +161,7 @@ test("does not replay a paid POST through a redirect", async (t) => {
   });
   await assert.rejects(
     streamChat(url, "test", request, new AbortController().signal, () => {}),
-    TypeError,
+    { code: "network" },
   );
   assert.equal(calls, 1);
 });
@@ -108,7 +177,7 @@ test("rejects a truncated stream and never emits an incomplete tool", async (t) 
     streamChat(url, "test", request, new AbortController().signal, (p) =>
       parts.push(p),
     ),
-    /Incomplete gateway stream/,
+    { code: "invalid_stream" },
   );
   assert.deepEqual(parts, []);
 });
@@ -132,7 +201,7 @@ test("cancellation closes the HTTP request without retry", async (t) => {
   await disconnected;
   assert.equal(calls, 1);
 });
-test("malformed JSON propagates the original parser exception", async (t) => {
+test("malformed JSON is classified without exposing the payload", async (t) => {
   const url = await server(t, (req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.end("data: {private payload}\n\n");
@@ -140,14 +209,14 @@ test("malformed JSON propagates the original parser exception", async (t) => {
   await assert.rejects(
     streamChat(url, "test", request, new AbortController().signal, () => {}),
     (error) => {
-      assert.ok(error instanceof SyntaxError);
-      assert.match(error.stack, /JSON.parse/);
+      assert.equal(error.code, "invalid_stream");
+      assert.ok(!error.stack.includes("private payload"));
       return true;
     },
   );
 });
 
-test("stream error objects remain available in the exception cause", async (t) => {
+test("stream error objects do not leak into the exception cause", async (t) => {
   const upstream = {
     message: "new upstream failure",
     code: "NEW_CODE",
@@ -160,13 +229,14 @@ test("stream error objects remain available in the exception cause", async (t) =
   await assert.rejects(
     streamChat(url, "test", request, new AbortController().signal, () => {}),
     (error) => {
-      assert.deepEqual(error.cause, upstream);
+      assert.equal(error.code, "stream_error");
+      assert.equal(error.cause, undefined);
       return true;
     },
   );
 });
 
-test("stream cleanup errors propagate without hiding the primary failure", async (t) => {
+test("stream cleanup errors do not expose raw failures", async (t) => {
   const originalFetch = global.fetch;
   t.after(() => {
     global.fetch = originalFetch;
@@ -181,6 +251,7 @@ test("stream cleanup errors propagate without hiding the primary failure", async
     let released = false;
     global.fetch = async () => ({
       ok: true,
+      headers: new Headers(),
       body: {
         pipeThrough: () => ({
           getReader: () => ({
@@ -211,12 +282,8 @@ test("stream cleanup errors propagate without hiding the primary failure", async
         () => {},
       ),
       (error) => {
-        if (readFailure && readFailure !== cancelFailure) {
-          assert.ok(error instanceof AggregateError);
-          assert.deepEqual(error.errors, [readFailure, cancelFailure]);
-        } else {
-          assert.equal(error, cancelFailure);
-        }
+        assert.equal(error.code, readFailure ? "network" : "invalid_stream");
+        assert.ok(!error.stack.includes("cancel failure"));
         return true;
       },
     );

@@ -1,14 +1,23 @@
 import * as vscode from "vscode";
-import { formatError } from "./diagnostics";
+import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, streamChat } from "./transport";
+import { streamMessages, toAnthropicMessages } from "./messages-transport";
 import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
+import { accountTooltip, rubles } from "./account";
+import { requestError } from "./request-errors";
 import {
   CredentialOperationCancelled,
   Credentials,
   SECRET_KEY,
 } from "./credentials";
-import { API_ORIGIN, BOT_URL, CredentialError, GatewayClient } from "./gateway";
+import {
+  AccountError,
+  API_ORIGIN,
+  BOT_URL,
+  CredentialError,
+  GatewayClient,
+} from "./gateway";
 
 function text(parts: readonly unknown[]): string {
   return parts
@@ -85,12 +94,35 @@ async function activateWithOutput(
     50,
   );
   status.command = "vrata.manage";
+  let accountKey: string | undefined;
+  let lastDiagnostic: { modelId?: string; code?: string; requestId?: string } =
+    {};
+  let lastNoticeCode: string | undefined;
+  let lastNoticeAt = 0;
+  let catalogKey: string | undefined;
+  let lastCatalog: readonly unknown[] | undefined;
   const credentials = new Credentials(
     context.secrets,
     new GatewayClient(fetch, (message) => output.info(message)),
     () => {
       updateStatus();
-      changes.fire();
+      if (
+        catalogKey !== credentials.key ||
+        lastCatalog !== credentials.catalog
+      ) {
+        catalogKey = credentials.key;
+        lastCatalog = credentials.catalog;
+        changes.fire();
+      }
+      if (accountKey !== credentials.key) {
+        accountKey = credentials.key;
+        lastDiagnostic = {};
+        lastNoticeCode = undefined;
+        if (accountKey) {
+          const key = accountKey;
+          void credentials.loadAccount().catch((error) => logError(error, key));
+        }
+      }
     },
   );
   function logError(error: unknown, ...keys: (string | undefined)[]): void {
@@ -108,17 +140,63 @@ async function activateWithOutput(
       logError(error);
     }
   }
+  function notifyRequestFailure(detail: ReturnType<typeof requestError>): void {
+    const now = Date.now();
+    if (lastNoticeCode === detail.code && now - lastNoticeAt < 60_000) return;
+    lastNoticeCode = detail.code;
+    lastNoticeAt = now;
+    const action = detail.action;
+    void Promise.resolve(
+      vscode.window.showErrorMessage(
+        detail.message,
+        ...(action ? [action.label] : []),
+      ),
+    )
+      .then((choice) => {
+        if (action && choice === action.label)
+          return vscode.commands.executeCommand(action.command);
+      })
+      .catch((error) => logError(error));
+  }
   function updateStatus(): void {
     const { unavailable } = projectCatalog(credentials.catalog);
-    status.text = credentials.connected
-      ? "$(key) Врата AI"
-      : "$(plug) Врата AI: подключить";
+    const account = credentials.account;
+    status.text = !credentials.connected
+      ? "$(plug) Врата AI: подключить"
+      : credentials.accountInvalid
+        ? "$(warning) Врата AI: неверный ключ"
+        : account
+          ? `$(key) Врата AI: ${rubles(account.balance.spendable)}${credentials.accountStale ? " (устарело)" : ""}`
+          : credentials.accountUnavailable
+            ? "$(warning) Врата AI: нет связи"
+            : "$(sync~spin) Врата AI: баланс…";
+    const tooltip = [
+      account && !credentials.accountInvalid
+        ? accountTooltip(account)
+        : undefined,
+      credentials.accountStale
+        ? "Данные баланса устарели: обновление не удалось."
+        : undefined,
+      credentials.accountInvalid
+        ? "Ключ недействителен. Замените его."
+        : undefined,
+      credentials.accountUnavailable && !credentials.accountInvalid
+        ? "Не удалось получить баланс. Обновите его вручную."
+        : undefined,
+      credentials.catalogUnavailable
+        ? "Каталог Врат AI недоступен. Обновите список моделей."
+        : undefined,
+      credentials.catalogStale ? "Каталог моделей устарел." : undefined,
+      credentials.catalogLoaded && !credentials.catalog.length
+        ? "Сервер не вернул моделей, разрешённых этому ключу."
+        : undefined,
+      unavailable.length
+        ? `Не показываются модели: ${unavailable.join("; ")}`
+        : undefined,
+    ];
     status.tooltip = credentials.connected
-      ? credentials.catalogUnavailable
-        ? "Каталог Врат AI недоступен. Откройте управление и обновите список моделей."
-        : `API-ключ сохранён. Управление подключением Врата AI${
-            credentials.catalogStale ? ". Каталог устарел." : ""
-          }${credentials.catalogLoaded && !credentials.catalog.length ? "\nСервер не вернул моделей, разрешённых этому ключу." : ""}${unavailable.length ? `\nНе показываются модели: ${unavailable.join("; ")}` : ""}`
+      ? tooltip.filter(Boolean).join("\n") ||
+        "API-ключ сохранён. Управление подключением Врата AI"
       : "Врата AI не подключены. Вставьте API-ключ";
     void vscode.commands
       .executeCommand("setContext", "vrata.connected", credentials.connected)
@@ -197,6 +275,33 @@ async function activateWithOutput(
       }`,
     );
   });
+  command("vrata.refreshBalance", async (keys) => {
+    if (!credentials.connected) return;
+    try {
+      await credentials.loadAccount();
+    } catch (error) {
+      logError(error, ...keys);
+      await showError(
+        error instanceof AccountError && error.status === 401
+          ? "Ключ Врат AI недействителен. Замените его."
+          : "Не удалось обновить баланс Врат AI. Последнее значение помечено как устаревшее.",
+      );
+    }
+  });
+  command("vrata.copyDiagnostics", async () => {
+    await vscode.env.clipboard.writeText(
+      diagnosticReport({
+        editorVersion: vscode.version,
+        extensionVersion: String(
+          context.extension?.packageJSON?.version ?? "unknown",
+        ),
+        ...lastDiagnostic,
+      }),
+    );
+    await vscode.window.showInformationMessage(
+      "Диагностика Врат AI скопирована.",
+    );
+  });
   command("vrata.getApiKey", () =>
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
   );
@@ -230,9 +335,10 @@ async function activateWithOutput(
             : "Вставить API-ключ",
           command: "vrata.setApiKey",
         },
-        { label: "Получить ключ в боте", command: "vrata.getApiKey" },
+        { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
         ...(credentials.connected
           ? [
+              { label: "Обновить баланс", command: "vrata.refreshBalance" },
               {
                 label: "Обновить список моделей",
                 command: "vrata.refreshModels",
@@ -241,6 +347,7 @@ async function activateWithOutput(
             ]
           : []),
         { label: "Открыть журнал", command: "vrata.showLogs" },
+        { label: "Скопировать диагностику", command: "vrata.copyDiagnostics" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
       ],
       {
@@ -334,34 +441,64 @@ async function activateWithOutput(
             if (token.isCancellationRequested) controller.abort();
             signal = AbortSignal.any([controller.signal, session.signal]);
             try {
-              await streamChat(
-                `${API_ORIGIN}/v1/chat/completions`,
+              const messagesTransport =
+                projectCatalog(credentials.catalog).transports[model.id] ===
+                "messages";
+              const requestId = await (
+                messagesTransport ? streamMessages : streamChat
+              )(
+                `${API_ORIGIN}${messagesTransport ? "/v1/messages" : "/v1/chat/completions"}`,
                 session.key,
-                {
-                  model: model.id,
-                  messages: toMessages(messages),
-                  max_tokens: model.maxOutputTokens,
-                  ...(options.tools?.length
-                    ? {
-                        tools: options.tools.map((tool) => ({
-                          type: "function",
-                          function: {
-                            name: tool.name,
-                            description: tool.description,
-                            parameters: tool.inputSchema ?? {
-                              type: "object",
-                              properties: {},
+                messagesTransport
+                  ? {
+                      model: model.id,
+                      messages: toAnthropicMessages(toMessages(messages)),
+                      max_tokens: model.maxOutputTokens,
+                      ...(options.tools?.length
+                        ? {
+                            tools: options.tools.map((tool) => ({
+                              name: tool.name,
+                              description: tool.description,
+                              input_schema: tool.inputSchema ?? {
+                                type: "object",
+                                properties: {},
+                              },
+                            })),
+                            tool_choice: {
+                              type:
+                                options.toolMode ===
+                                vscode.LanguageModelChatToolMode.Required
+                                  ? "any"
+                                  : "auto",
                             },
-                          },
-                        })),
-                        tool_choice:
-                          options.toolMode ===
-                          vscode.LanguageModelChatToolMode.Required
-                            ? "required"
-                            : "auto",
-                      }
-                    : {}),
-                },
+                          }
+                        : {}),
+                    }
+                  : {
+                      model: model.id,
+                      messages: toMessages(messages),
+                      max_tokens: model.maxOutputTokens,
+                      ...(options.tools?.length
+                        ? {
+                            tools: options.tools.map((tool) => ({
+                              type: "function",
+                              function: {
+                                name: tool.name,
+                                description: tool.description,
+                                parameters: tool.inputSchema ?? {
+                                  type: "object",
+                                  properties: {},
+                                },
+                              },
+                            })),
+                            tool_choice:
+                              options.toolMode ===
+                              vscode.LanguageModelChatToolMode.Required
+                                ? "required"
+                                : "auto",
+                          }
+                        : {}),
+                    },
                 signal,
                 (part) => {
                   if (!session.isCurrent() || signal?.aborted) return;
@@ -376,15 +513,27 @@ async function activateWithOutput(
                   );
                 },
               );
+              lastDiagnostic = { modelId: model.id, requestId };
             } finally {
               subscription.dispose();
+              if (session.isCurrent())
+                void credentials
+                  .loadAccount()
+                  .catch((error) => logError(error, session.key));
             }
           });
         } catch (error) {
-          logError(error, key);
           if (signal?.aborted) throw new vscode.CancellationError();
+          logError(error, key);
+          const detail = requestError(error);
+          lastDiagnostic = {
+            modelId: model.id,
+            code: detail.code,
+            requestId: detail.requestId,
+          };
+          notifyRequestFailure(detail);
           // eslint-disable-next-line preserve-caught-error -- The original is logged above; its cause may expose a key to the editor.
-          throw new Error("Не удалось получить ответ Врат AI.");
+          throw new Error(detail.message);
         }
       },
     }),

@@ -63,7 +63,7 @@ test("real HTTP chain validates with GET only; zero balance and empty catalog ar
     assert.equal(stored, "zero-balance");
   }
   await credentials.remove();
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
   assert.ok(
     calls.every((call) => call.method === "GET" && call.path === "/v1/models"),
   );
@@ -87,6 +87,42 @@ test("network errors propagate unchanged and a cancelled request does not start 
   });
   await assert.rejects(cancelled.models("key", controller.signal));
   assert.equal(requests, 0);
+});
+
+test("account accepts zero balance and rejects malformed amounts", async () => {
+  const account = {
+    checked_at: "2026-09-25T00:00:00Z",
+    balance: {
+      currency: "RUB",
+      unit: "coin_atoms",
+      paid_available: "0",
+      promo_available: "0",
+      reserved: "0",
+      spendable: "0",
+    },
+    quota: {
+      currency: "RUB",
+      unit: "coin_atoms",
+      limit: null,
+      remaining: null,
+    },
+  };
+  let value = account;
+  const client = new GatewayClient(async (url, options) => {
+    assert.equal(url, `${API_ORIGIN}/v1/account`);
+    assert.equal(options.method, "GET");
+    return new Response(JSON.stringify(value));
+  });
+  assert.equal(
+    (await client.account("fixture", new AbortController().signal)).balance
+      .spendable,
+    "0",
+  );
+  value = { ...account, balance: { ...account.balance, spendable: "1.50" } };
+  await assert.rejects(
+    client.account("fixture", new AbortController().signal),
+    { message: "INVALID_ACCOUNT" },
+  );
 });
 
 test("raw diagnostics preserve unknown errors, stacks and nested causes while masking the key", async () => {

@@ -1,4 +1,4 @@
-import { CredentialError } from "./gateway";
+import { AccountError, AccountSnapshot, CredentialError } from "./gateway";
 
 export const SECRET_KEY = "vrata.apiKey";
 export class CredentialOperationCancelled extends Error {}
@@ -11,6 +11,7 @@ interface Secrets {
 
 interface CatalogClient {
   models(key: string, signal: AbortSignal): Promise<readonly unknown[]>;
+  account(key: string, signal: AbortSignal): Promise<AccountSnapshot>;
 }
 
 interface Session {
@@ -21,6 +22,10 @@ interface Session {
   catalogRetryAt?: number;
   catalogFailed?: boolean;
   catalogRequest?: Promise<void>;
+  account?: AccountSnapshot;
+  accountFailed?: boolean;
+  accountInvalid?: boolean;
+  accountRequest?: Promise<void>;
   cache: Map<string, unknown>;
 }
 
@@ -67,6 +72,22 @@ export class Credentials {
     return (
       this.session?.catalogFailed === true && this.session.catalog === undefined
     );
+  }
+  get account(): AccountSnapshot | undefined {
+    return this.session?.account;
+  }
+  get accountStale(): boolean {
+    return (
+      this.session?.accountFailed === true && this.session.account !== undefined
+    );
+  }
+  get accountUnavailable(): boolean {
+    return (
+      this.session?.accountFailed === true && this.session.account === undefined
+    );
+  }
+  get accountInvalid(): boolean {
+    return this.session?.accountInvalid === true;
   }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -210,6 +231,33 @@ export class Credentials {
       session.catalogRequest = undefined;
     });
     await session.catalogRequest;
+  }
+
+  async loadAccount(): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    session.accountRequest ??= this.run(async (active) => {
+      try {
+        const account = await this.client.account(active.key, active.signal);
+        if (active.isCurrent()) {
+          session.account = account;
+          session.accountFailed = false;
+          session.accountInvalid = false;
+          this.changed();
+        }
+      } catch (error) {
+        if (active.isCurrent()) {
+          session.accountFailed = true;
+          session.accountInvalid =
+            error instanceof AccountError && error.status === 401;
+          this.changed();
+        }
+        throw error;
+      }
+    }).finally(() => {
+      session.accountRequest = undefined;
+    });
+    await session.accountRequest;
   }
 
   dispose(): void {

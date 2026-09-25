@@ -43,6 +43,16 @@
         "category": "Врата AI"
       },
       {
+        "command": "vrata.refreshBalance",
+        "title": "Обновить баланс",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.copyDiagnostics",
+        "title": "Скопировать диагностику",
+        "category": "Врата AI"
+      },
+      {
         "command": "vrata.getApiKey",
         "title": "Получить ключ в боте",
         "category": "Врата AI"

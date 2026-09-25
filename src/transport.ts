@@ -1,5 +1,40 @@
 export type Part =
   { text: string } | { id: string; name: string; input: object };
+export type TransportCode =
+  | "invalid_key"
+  | "insufficient_balance"
+  | "model_unavailable"
+  | "key_limit"
+  | "rate_limit"
+  | "request_too_large"
+  | "request_rejected"
+  | "service_error"
+  | "network"
+  | "timeout"
+  | "invalid_stream"
+  | "stream_error";
+
+export class TransportError extends Error {
+  constructor(
+    readonly code: TransportCode,
+    readonly status?: number,
+    readonly requestId?: string,
+  ) {
+    super(code);
+  }
+}
+
+export function httpCode(
+  status: number,
+  retryAfter: string | null,
+): TransportCode {
+  if (status === 401) return "invalid_key";
+  if (status === 402) return "insufficient_balance";
+  if (status === 403 || status === 404) return "model_unavailable";
+  if (status === 429) return retryAfter ? "rate_limit" : "key_limit";
+  if (status === 413) return "request_too_large";
+  return status >= 500 ? "service_error" : "request_rejected";
+}
 export interface Message {
   role: "user" | "assistant" | "tool";
   content: string | null;
@@ -24,23 +59,43 @@ export async function streamChat(
   body: object,
   signal: AbortSignal,
   report: (part: Part) => void,
-): Promise<void> {
+  timeoutMs = 10 * 60_000,
+): Promise<string | undefined> {
   signal.throwIfAborted();
-  const response = await fetch(endpoint, {
-    method: "POST",
-    signal,
-    redirect: "error",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ...body, stream: true }),
-  });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`Gateway HTTP ${response.status}`);
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const requestSignal = AbortSignal.any([signal, deadline]);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      signal: requestSignal,
+      redirect: "error",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ...body, stream: true }),
+    });
+  } catch {
+    if (signal.aborted) signal.throwIfAborted();
+    if (deadline.aborted) throw new TransportError("timeout");
+    throw new TransportError("network");
   }
-  if (!response.body) throw new Error("Missing gateway stream");
+  const requestId = response.headers.get("x-request-id") ?? undefined;
+  if (!response.ok) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // The HTTP status remains the actionable failure.
+    }
+    throw new TransportError(
+      httpCode(response.status, response.headers.get("retry-after")),
+      response.status,
+      requestId,
+    );
+  }
+  if (!response.body)
+    throw new TransportError("invalid_stream", 200, requestId);
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   const calls = new Map<
     number,
@@ -49,7 +104,7 @@ export async function streamChat(
   let buffer = "",
     finish: string | undefined,
     done = false;
-  const failures: unknown[] = [];
+  let failure: unknown;
   try {
     while (!done) {
       const chunk = await reader.read();
@@ -65,12 +120,23 @@ export async function streamChat(
           done = true;
           break;
         }
-        const event = JSON.parse(data) as {
+        let event: {
           error?: unknown;
           choices?: { delta: Delta; finish_reason?: string }[];
         };
+        try {
+          event = JSON.parse(data);
+        } catch {
+          throw new TransportError("invalid_stream", 200, requestId);
+        }
+        if (
+          !event ||
+          typeof event !== "object" ||
+          (!Array.isArray(event.choices) && !event.error)
+        )
+          throw new TransportError("invalid_stream", 200, requestId);
         if (event.error)
-          throw new Error("Gateway stream error", { cause: event.error });
+          throw new TransportError("stream_error", 200, requestId);
         for (const choice of event.choices ?? []) {
           if (choice.finish_reason) finish = choice.finish_reason;
           if (choice.delta?.content) report({ text: choice.delta.content });
@@ -89,31 +155,44 @@ export async function streamChat(
       }
     }
     signal.throwIfAborted();
-    if (!done || !finish) throw new Error("Incomplete gateway stream");
+    if (deadline.aborted) throw new TransportError("timeout", 200, requestId);
+    if (!done || !finish)
+      throw new TransportError("invalid_stream", 200, requestId);
     if (finish !== "stop" && finish !== "tool_calls")
-      throw new Error("Unsupported gateway finish reason");
+      throw new TransportError("invalid_stream", 200, requestId);
     // Validate the whole batch before letting the editor execute any tool.
     const parts: Part[] = [...calls.values()].map((call) => {
       if (finish !== "tool_calls" || !call.id || !call.name)
-        throw new Error("Invalid gateway tool call");
-      const input: unknown = JSON.parse(call.arguments);
+        throw new TransportError("invalid_stream", 200, requestId);
+      let input: unknown;
+      try {
+        input = JSON.parse(call.arguments);
+      } catch {
+        throw new TransportError("invalid_stream", 200, requestId);
+      }
       if (!input || typeof input !== "object" || Array.isArray(input))
-        throw new Error("Invalid gateway tool arguments");
+        throw new TransportError("invalid_stream", 200, requestId);
       return { id: call.id, name: call.name, input };
     });
     for (const part of parts) report(part);
   } catch (error) {
-    failures.push(error);
+    failure = signal.aborted
+      ? signal.reason
+      : deadline.aborted
+        ? new TransportError("timeout", 200, requestId)
+        : error instanceof TransportError
+          ? error
+          : new TransportError("network", 200, requestId);
   } finally {
     try {
       await reader.cancel();
-    } catch (error) {
-      if (!failures.includes(error)) failures.push(error);
+    } catch {
+      if (!failure)
+        failure = new TransportError("invalid_stream", 200, requestId);
     } finally {
       reader.releaseLock();
     }
   }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1)
-    throw new AggregateError(failures, "Gateway stream cleanup failed");
+  if (failure) throw failure;
+  return requestId;
 }

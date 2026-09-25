@@ -64,7 +64,27 @@ test("does not expose models with incomplete limits, tools or transport", () => 
   assert.match(result.unavailable[0], /пределы/);
   assert.match(result.unavailable[1], /инструментов/);
   assert.match(result.unavailable[2], /семейство/);
-  assert.match(result.unavailable[3], /Chat Completions/);
+  assert.match(result.unavailable[3], /транспорт/);
   assert.match(result.unavailable[4], /транспорт/);
   assert.deepEqual(projectCatalog([]).models, []);
+});
+
+test("prefers direct Messages when both protocol views expose a model", () => {
+  const result = projectCatalog([
+    entry("claude-fable-5"),
+    entry("claude-fable-5", {
+      protocol: "anthropic",
+      verified_transport: "messages",
+    }),
+  ]);
+  assert.deepEqual(
+    result.models.map((model) => model.id),
+    ["claude-fable-5"],
+  );
+  assert.equal(result.transports["claude-fable-5"], "messages");
+  assert.deepEqual(result.unavailable, []);
+  assert.equal(
+    projectCatalog([entry("claude-fable-5")]).transports["claude-fable-5"],
+    "chat_completions",
+  );
 });

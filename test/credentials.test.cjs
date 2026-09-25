@@ -5,6 +5,7 @@ const {
   CredentialOperationCancelled,
   SECRET_KEY,
 } = require("../dist/credentials");
+const { AccountError } = require("../dist/gateway");
 
 function fixture(initial) {
   let now = 0;
@@ -25,6 +26,16 @@ function fixture(initial) {
       if (key === "invalid" || key === "revoked") throw new Error("denied");
       return [{ id: key }];
     },
+    account: async () => ({
+      checked_at: "2026-09-25T00:00:00Z",
+      balance: {
+        paid_available: "0",
+        promo_available: "0",
+        reserved: "0",
+        spendable: "0",
+      },
+      quota: { limit: null, remaining: null },
+    }),
   };
   const changes = [];
   const credentials = new Credentials(
@@ -45,6 +56,48 @@ function fixture(initial) {
     },
   };
 }
+
+test("account refresh coalesces, keeps stale value, and isolates replacement keys", async () => {
+  const f = fixture();
+  await f.credentials.initialize();
+  await f.credentials.replace("old");
+  let resolve;
+  let reads = 0;
+  f.client.account = async () => {
+    reads++;
+    return new Promise((done) => {
+      resolve = done;
+    });
+  };
+  const first = f.credentials.loadAccount();
+  const same = f.credentials.loadAccount();
+  assert.equal(reads, 1);
+  resolve({
+    checked_at: "2026-09-25T00:00:00Z",
+    balance: {
+      paid_available: "0",
+      promo_available: "0",
+      reserved: "0",
+      spendable: "0",
+    },
+    quota: { limit: null, remaining: null },
+  });
+  await Promise.all([first, same]);
+  assert.equal(f.credentials.account.balance.spendable, "0");
+  f.client.account = async () => {
+    throw new Error("offline");
+  };
+  await assert.rejects(f.credentials.loadAccount());
+  assert.equal(f.credentials.accountStale, true);
+  await f.credentials.replace("new");
+  assert.equal(f.credentials.account, undefined);
+  assert.equal(f.credentials.accountStale, false);
+  f.client.account = async () => {
+    throw new AccountError(401);
+  };
+  await assert.rejects(f.credentials.loadAccount());
+  assert.equal(f.credentials.accountInvalid, true);
+});
 
 test("trim, validate read-only, persist and restore arbitrary-format key", async () => {
   const f = fixture();

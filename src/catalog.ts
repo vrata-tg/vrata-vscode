@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 export interface CatalogProjection {
   models: vscode.LanguageModelChatInformation[];
   unavailable: string[];
+  transports: Record<string, "chat_completions" | "messages">;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -19,23 +20,27 @@ function limit(value: unknown): value is number {
 export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
   const models: vscode.LanguageModelChatInformation[] = [];
   const unavailable: string[] = [];
-  const seen = new Set<string>();
+  const transports: CatalogProjection["transports"] = Object.create(null);
+  const rejected = new Map<string, string>();
   for (const entry of entries) {
     const item = record(entry);
     if (!item || typeof item.id !== "string" || !item.id.trim()) continue;
     const id = item.id;
-    if (seen.has(id)) continue;
-    seen.add(id);
     const metadata = record(item.gateway_metadata);
     if (!metadata) {
-      unavailable.push(`${id}: нет подтверждённых metadata`);
+      rejected.set(id, `${id}: нет подтверждённых metadata`);
       continue;
     }
     let reason: string | undefined;
-    if (metadata.protocol !== "openai")
-      reason = "нет доступа через Chat Completions";
-    else if (metadata.verified_transport !== "chat_completions")
-      reason = "транспорт для агента не подтверждён";
+    const transport =
+      metadata.protocol === "openai" &&
+      metadata.verified_transport === "chat_completions"
+        ? "chat_completions"
+        : metadata.protocol === "anthropic" &&
+            metadata.verified_transport === "messages"
+          ? "messages"
+          : undefined;
+    if (!transport) reason = "транспорт для агента не подтверждён";
     else if (metadata.supports_tools !== true)
       reason = "вызов инструментов не подтверждён";
     else if (
@@ -51,10 +56,15 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
     )
       reason = "пределы входа или ответа не подтверждены";
     if (reason) {
-      unavailable.push(`${id}: ${reason}`);
+      rejected.set(id, `${id}: ${reason}`);
       continue;
     }
-    models.push({
+    if (
+      transports[id] === "messages" ||
+      (transports[id] && transport !== "messages")
+    )
+      continue;
+    const model = {
       id,
       name: metadata.name as string,
       family: metadata.family as string,
@@ -62,7 +72,13 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
       maxInputTokens: metadata.max_input_tokens as number,
       maxOutputTokens: metadata.max_output_tokens as number,
       capabilities: { toolCalling: true, imageInput: false },
-    });
+    };
+    if (transports[id])
+      models[models.findIndex((existing) => existing.id === id)] = model;
+    else models.push(model);
+    transports[id] = transport!;
   }
-  return { models, unavailable };
+  for (const [id, reason] of rejected)
+    if (!transports[id]) unavailable.push(reason);
+  return { models, unavailable, transports };
 }
