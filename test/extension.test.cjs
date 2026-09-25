@@ -150,7 +150,8 @@ test("native commands, masked input, silent discovery and secret events", async 
           await new Promise((resolve) => {
             dismissStartupError = resolve;
           });
-        if (action !== undefined) assert.equal(action, "Открыть журнал");
+        if (action !== undefined)
+          assert.ok(["Открыть журнал", "Вставить ключ"].includes(action));
         return action;
       },
       showWarningMessage: async (_message, _options, action) => action,

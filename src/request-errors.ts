@@ -1,4 +1,5 @@
 import { TransportError } from "./transport";
+import { CredentialError } from "./gateway";
 
 export function requestError(error: unknown): {
   code: string;
@@ -6,6 +7,12 @@ export function requestError(error: unknown): {
   action?: { label: string; command: string };
   requestId?: string;
 } {
+  if (error instanceof CredentialError)
+    return {
+      code: "missing_key",
+      message: "Врата AI не подключены. Вставьте API-ключ.",
+      action: { label: "Вставить ключ", command: "vrata.setApiKey" },
+    };
   if (!(error instanceof TransportError))
     return {
       code: "request_failed",

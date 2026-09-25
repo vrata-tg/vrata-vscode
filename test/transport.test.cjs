@@ -139,6 +139,19 @@ test("Chat Completions carries tool results through two iterations", async (t) =
   assert.equal(bodies[1].messages.at(-1).tool_call_id, "call-1");
   assert.equal(bodies[2].messages.at(-1).tool_call_id, "call-2");
 });
+test("Chat Completions accepts an empty completed answer", async (t) => {
+  const url = await server(t, (_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.end(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+    );
+  });
+  const parts = [];
+  await streamChat(url, "test", request, new AbortController().signal, (part) =>
+    parts.push(part),
+  );
+  assert.deepEqual(parts, []);
+});
 test("does not retry HTTP failure or expose an upstream body", async (t) => {
   let calls = 0;
   const url = await server(t, (req, res) => {

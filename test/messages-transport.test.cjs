@@ -221,3 +221,40 @@ test("Messages times out a stalled stream without retry", async (t) => {
   );
   assert.equal(requests, 1);
 });
+
+test("Messages handles an empty final answer and classifies mid-stream errors", async (t) => {
+  let calls = 0;
+  const url = await server(t, (_req, res) => {
+    calls++;
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.end(
+      calls === 1
+        ? sse("message_start", { message: {} }) +
+            sse("message_delta", { delta: { stop_reason: "end_turn" } }) +
+            sse("message_stop")
+        : sse("message_start", { message: {} }) +
+            sse("error", { error: { message: "private response" } }),
+    );
+  });
+  const parts = [];
+  await streamMessages(
+    url,
+    "test",
+    { model: "fixture", messages: [], max_tokens: 1 },
+    new AbortController().signal,
+    (part) => parts.push(part),
+  );
+  assert.deepEqual(parts, []);
+  await assert.rejects(
+    streamMessages(
+      url,
+      "test",
+      { model: "fixture", messages: [], max_tokens: 1 },
+      new AbortController().signal,
+      () => {},
+    ),
+    (error) =>
+      error.code === "stream_error" &&
+      !error.stack.includes("private response"),
+  );
+});

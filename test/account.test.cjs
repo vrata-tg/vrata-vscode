@@ -4,6 +4,7 @@ const { rubles, accountTooltip } = require("../dist/account");
 const { diagnosticReport } = require("../dist/diagnostics");
 const { requestError } = require("../dist/request-errors");
 const { TransportError } = require("../dist/transport");
+const { CredentialError } = require("../dist/gateway");
 
 test("balance and quota stay separate, including zero and reserve", () => {
   const tooltip = accountTooltip({
@@ -34,6 +35,10 @@ test("request errors map to actions without upstream details", () => {
   assert.equal(
     requestError(new TransportError("key_limit", 429)).action.command,
     "vrata.getApiKey",
+  );
+  assert.equal(
+    requestError(new CredentialError("no session")).action.command,
+    "vrata.setApiKey",
   );
 });
 
