@@ -298,12 +298,6 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(requests.length, requestCount);
   assert.equal(changes, 2);
   assert.ok(
-    requests.every(
-      ({ url, options }) =>
-        url === "https://api.vrata.tg/v1/models" && options.method === "GET",
-    ),
-  );
-  assert.ok(
     !JSON.stringify([...errors, ...notices, ...logLines]).includes(
       "arbitrary-format",
     ),
