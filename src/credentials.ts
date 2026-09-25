@@ -1,6 +1,7 @@
 import { AccountError, AccountSnapshot, CredentialError } from "./gateway";
 
 export const SECRET_KEY = "vrata.apiKey";
+const EMPTY_CATALOG: readonly unknown[] = [];
 export class CredentialOperationCancelled extends Error {}
 
 interface Secrets {
@@ -54,7 +55,7 @@ export class Credentials {
     return !!this.session;
   }
   get catalog(): readonly unknown[] {
-    return this.session?.catalog ?? [];
+    return this.session?.catalog ?? EMPTY_CATALOG;
   }
   get catalogLoaded(): boolean {
     return this.session?.catalog !== undefined;
