@@ -17,6 +17,9 @@ exports.run = async () => {
     "manage",
     "setApiKey",
     "removeApiKey",
+    "refreshModels",
+    "refreshBalance",
+    "copyDiagnostics",
     "getApiKey",
     "openWalkthrough",
     "showLogs",
@@ -40,7 +43,11 @@ exports.run = async () => {
   const server = http.createServer((req, res) => {
     calls.push({ method: req.method, path: req.url });
     assert.equal(req.headers.authorization, "Bearer synthetic-host-key");
-    res.end('{"data":[{"id":"synthetic-catalog"}]}');
+    res.end(
+      req.headers["anthropic-version"]
+        ? '{"data":[]}'
+        : '{"data":[{"id":"synthetic-catalog"}]}',
+    );
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const client = new GatewayClient((_url, options) =>
@@ -71,7 +78,7 @@ exports.run = async () => {
         (call) => call.method === "GET" && call.path === "/v1/models",
       ),
     );
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
     assert.equal(
       await vscode.authentication.getSession("github", ["user:email"], {
         createIfNone: false,

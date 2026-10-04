@@ -5,8 +5,10 @@ const {
   CredentialOperationCancelled,
   SECRET_KEY,
 } = require("../dist/credentials");
+const { AccountError } = require("../dist/gateway");
 
 function fixture(initial) {
+  let now = 0;
   const values = new Map(initial ? [[SECRET_KEY, initial]] : []);
   const secrets = {
     get: async (name) => values.get(name),
@@ -24,13 +26,78 @@ function fixture(initial) {
       if (key === "invalid" || key === "revoked") throw new Error("denied");
       return [{ id: key }];
     },
+    account: async () => ({
+      checked_at: "2026-09-25T00:00:00Z",
+      balance: {
+        paid_available: "0",
+        promo_available: "0",
+        reserved: "0",
+        spendable: "0",
+      },
+      quota: { limit: null, remaining: null },
+    }),
   };
   const changes = [];
-  const credentials = new Credentials(secrets, client, () =>
-    changes.push(credentials.connected),
+  const credentials = new Credentials(
+    secrets,
+    client,
+    () => changes.push(credentials.connected),
+    () => now,
   );
-  return { credentials, secrets, values, reads, changes, client };
+  return {
+    credentials,
+    secrets,
+    values,
+    reads,
+    changes,
+    client,
+    advance: (milliseconds) => {
+      now += milliseconds;
+    },
+  };
 }
+
+test("account refresh coalesces, keeps stale value, and isolates replacement keys", async () => {
+  const f = fixture();
+  await f.credentials.initialize();
+  await f.credentials.replace("old");
+  let resolve;
+  let reads = 0;
+  f.client.account = async () => {
+    reads++;
+    return new Promise((done) => {
+      resolve = done;
+    });
+  };
+  const first = f.credentials.loadAccount();
+  const same = f.credentials.loadAccount();
+  assert.equal(reads, 1);
+  resolve({
+    checked_at: "2026-09-25T00:00:00Z",
+    balance: {
+      paid_available: "0",
+      promo_available: "0",
+      reserved: "0",
+      spendable: "0",
+    },
+    quota: { limit: null, remaining: null },
+  });
+  await Promise.all([first, same]);
+  assert.equal(f.credentials.account.balance.spendable, "0");
+  f.client.account = async () => {
+    throw new Error("offline");
+  };
+  await assert.rejects(f.credentials.loadAccount());
+  assert.equal(f.credentials.accountStale, true);
+  await f.credentials.replace("new");
+  assert.equal(f.credentials.account, undefined);
+  assert.equal(f.credentials.accountStale, false);
+  f.client.account = async () => {
+    throw new AccountError(401);
+  };
+  await assert.rejects(f.credentials.loadAccount());
+  assert.equal(f.credentials.accountInvalid, true);
+});
 
 test("trim, validate read-only, persist and restore arbitrary-format key", async () => {
   const f = fixture();
@@ -211,7 +278,7 @@ test("discovery reuses a validated empty catalog without checking the key again"
   assert.deepEqual(f.credentials.catalog, []);
 });
 
-test("restored sessions share catalog loading and retry after a failed request", async () => {
+test("restored sessions share loading and back off after a failed request", async () => {
   const f = fixture("saved");
   await f.credentials.initialize();
   let reject, resolve;
@@ -232,7 +299,14 @@ test("restored sessions share catalog loading and retry after a failed request",
   );
   reject(new Error("temporary failure"));
   assert.ok((await failed).every((result) => result.status === "rejected"));
-  const retry = f.credentials.loadCatalog();
+  assert.equal(f.credentials.catalogUnavailable, true);
+  await f.credentials.loadCatalog();
+  assert.equal(
+    f.reads.length,
+    1,
+    "silent discovery must respect the retry delay",
+  );
+  const retry = f.credentials.loadCatalog(true);
   resolve([]);
   await retry;
   await f.credentials.loadCatalog();
@@ -244,6 +318,32 @@ test("restored sessions share catalog loading and retry after a failed request",
   await changed;
   assert.deepEqual(f.reads, ["saved", "saved", "external"]);
   assert.deepEqual(f.credentials.catalog, [{ id: "external model" }]);
+});
+
+test("TTL refresh marks only the same key's old catalog stale after failure", async () => {
+  const f = fixture();
+  await f.credentials.replace("first");
+  assert.equal(f.credentials.catalogStale, false);
+  f.advance(Credentials.catalogTtlMs);
+  f.client.models = async () => {
+    throw Error("offline");
+  };
+  await assert.rejects(f.credentials.loadCatalog(), /offline/);
+  assert.equal(f.credentials.catalogStale, true);
+  assert.deepEqual(f.credentials.catalog, [{ id: "first" }]);
+  await f.credentials.loadCatalog();
+  assert.deepEqual(f.reads, ["first"]);
+  f.advance(Credentials.catalogRetryMs);
+  f.client.models = async (key) => {
+    f.reads.push(key);
+    return [{ id: `${key}-updated` }];
+  };
+  await f.credentials.loadCatalog();
+  assert.equal(f.credentials.catalogStale, false);
+  assert.deepEqual(f.credentials.catalog, [{ id: "first-updated" }]);
+  await f.credentials.replace("second");
+  assert.deepEqual(f.credentials.catalog, [{ id: "second-updated" }]);
+  assert.equal(f.credentials.catalogStale, false);
 });
 
 test("disposal during deletion does not notify disposed subscribers", async () => {
