@@ -30,8 +30,10 @@ test("native commands, masked input, silent discovery and secret events", async 
     manageCount = 0,
     provider,
     secretListener;
+  let copied;
   const disposable = { dispose() {} };
   const context = {
+    extension: { packageJSON: { version: "0.1.6" } },
     subscriptions: [],
     globalState: { get: () => true },
     secrets: {
@@ -56,6 +58,30 @@ test("native commands, masked input, silent discovery and secret events", async 
     },
   };
   const vscode = {
+    version: "1.104.0",
+    env: {
+      clipboard: {
+        writeText: async (value) => {
+          copied = value;
+        },
+      },
+    },
+    LanguageModelChatMessageRole: { Assistant: 2 },
+    LanguageModelTextPart: class {
+      constructor(value) {
+        this.value = value;
+      }
+    },
+    LanguageModelToolCallPart: class {
+      constructor(callId, name, input) {
+        Object.assign(this, { callId, name, input });
+      }
+    },
+    LanguageModelToolResultPart: class {
+      constructor(callId, content) {
+        Object.assign(this, { callId, content });
+      }
+    },
     workspace: {
       getConfiguration: () => ({
         inspect: () =>
@@ -124,7 +150,8 @@ test("native commands, masked input, silent discovery and secret events", async 
           await new Promise((resolve) => {
             dismissStartupError = resolve;
           });
-        if (action !== undefined) assert.equal(action, "Открыть журнал");
+        if (action !== undefined)
+          assert.ok(["Открыть журнал", "Вставить ключ"].includes(action));
         return action;
       },
       showWarningMessage: async (_message, _options, action) => action,
@@ -155,12 +182,84 @@ test("native commands, masked input, silent discovery and secret events", async 
   const extension = require("../dist/extension");
   Module._load = originalLoad;
   const originalFetch = global.fetch;
+  let directMessages = false;
   global.fetch = async (url, options) => {
     requests.push({ url, options });
     if (fetchFailure) throw fetchFailure;
+    if (directMessages && url.endsWith("/v1/messages"))
+      return new Response(
+        'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' +
+          'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}\n\n' +
+          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ready"}}\n\n' +
+          'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n' +
+          'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n' +
+          'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      );
+    if (url.endsWith("/v1/account"))
+      return new Response(
+        JSON.stringify({
+          checked_at: "2026-09-25T00:00:00Z",
+          balance: {
+            currency: "RUB",
+            unit: "coin_atoms",
+            paid_available: "0",
+            promo_available: "0",
+            reserved: "0",
+            spendable: "0",
+          },
+          quota: {
+            currency: "RUB",
+            unit: "coin_atoms",
+            limit: null,
+            remaining: null,
+          },
+        }),
+      );
+    if (directMessages)
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "claude-fable-5",
+              gateway_metadata: {
+                name: "claude-fable-5",
+                family: "claude",
+                protocol: options.headers["Anthropic-Version"]
+                  ? "anthropic"
+                  : "openai",
+                verified_transport: options.headers["Anthropic-Version"]
+                  ? "messages"
+                  : "chat_completions",
+                max_input_tokens: 100000,
+                max_output_tokens: 4096,
+                supports_tools: true,
+              },
+            },
+          ],
+        }),
+      );
     return options.headers.Authorization === "Bearer invalid"
       ? new Response('{"error":{"message":"private data"}}', { status: 401 })
-      : new Response('{"data":[]}');
+      : new Response(
+          JSON.stringify({
+            data: options.headers["Anthropic-Version"]
+              ? []
+              : [
+                  {
+                    id: "gpt-5.6-terra",
+                    gateway_metadata: {
+                      name: "gpt-5.6-terra",
+                      family: "gpt",
+                      protocol: "openai",
+                      max_input_tokens: 120000,
+                      max_output_tokens: 8000,
+                      supports_tools: true,
+                      verified_transport: "chat_completions",
+                    },
+                  },
+                ],
+          }),
+        );
   };
   t.after(() => {
     dismissStartupError?.();
@@ -254,13 +353,19 @@ test("native commands, masked input, silent discovery and secret events", async 
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
   await Promise.all(discoveryTasks);
-  await Promise.all([
+  const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
   ]);
+  assert.deepEqual(
+    discovered.map((models) => models.map((model) => model.id)),
+    [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
+  );
+  assert.equal(discovered[0][0].maxInputTokens, 120000);
+  assert.equal(discovered[0][0].capabilities.imageInput, false);
   assert.equal(
     requests.length,
-    1,
+    3,
     "discovery must reuse the catalog returned by key validation",
   );
   assert.equal(inputOptions.password, true);
@@ -271,7 +376,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 3);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
@@ -291,12 +396,16 @@ test("native commands, masked input, silent discovery and secret events", async 
     1,
     "self secret event must not invalidate the new account twice",
   );
+  const beforeRefresh = requests.length;
+  await commands.get("vrata.refreshModels")();
+  assert.equal(requests.length, beforeRefresh + 2);
+  assert.equal(changes, 2);
   await commands.get("vrata.removeApiKey")();
   assert.equal(values.size, 0);
   const requestCount = requests.length;
   await provider.provideLanguageModelChatInformation({ silent: true }, {});
   assert.equal(requests.length, requestCount);
-  assert.equal(changes, 2);
+  assert.equal(changes, 3);
   assert.ok(
     !JSON.stringify([...errors, ...notices, ...logLines]).includes(
       "arbitrary-format",
@@ -377,8 +486,10 @@ test("native commands, masked input, silent discovery and secret events", async 
     throw new Error("catalog preparation failed");
   };
   assert.deepEqual(
-    await provider.provideLanguageModelChatInformation({ silent: true }, {}),
-    [],
+    (
+      await provider.provideLanguageModelChatInformation({ silent: true }, {})
+    ).map((model) => model.id),
+    ["gpt-5.6-terra"],
   );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;
@@ -392,17 +503,45 @@ test("native commands, masked input, silent discovery and secret events", async 
   };
   await assert.rejects(
     provider.provideLanguageModelChatResponse(
-      { id: "fixture", maxOutputTokens: 10 },
+      discovered[0][0],
       [],
       {},
       { report() {} },
       token,
     ),
-    /Не удалось получить ответ/,
+    /Нет связи с Вратами AI/,
   );
-  assertLogged(/stream failed \[REDACTED\]/);
-  assertLogged(/stream socket cause/);
+  assert.equal(
+    JSON.parse(
+      requests.findLast((request) => request.options.method === "POST").options
+        .body,
+    ).model,
+    "gpt-5.6-terra",
+  );
+  assertLogged(/network/);
   fetchFailure = undefined;
+  directMessages = true;
+  await commands.get("vrata.refreshModels")();
+  const [claude] = await provider.provideLanguageModelChatInformation(
+    { silent: true },
+    {},
+  );
+  const directParts = [];
+  await provider.provideLanguageModelChatResponse(
+    claude,
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    {},
+    { report: (part) => directParts.push(part.value) },
+    token,
+  );
+  assert.deepEqual(directParts, ["ready"]);
+  assert.match(
+    requests.findLast((request) => request.options.method === "POST").url,
+    /\/v1\/messages$/,
+  );
+  await commands.get("vrata.copyDiagnostics")();
+  assert.match(copied, /Модель: claude-fable-5/);
+  assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
   await commands.get("vrata.removeApiKey")();
   await assert.rejects(
     provider.provideLanguageModelChatResponse(
@@ -424,10 +563,31 @@ test("native commands, masked input, silent discovery and secret events", async 
   assertLogged(/735/);
   assert.ok(!JSON.stringify([...errors, ...logLines]).includes(input));
 
-  const cyclicInput = [];
-  cyclicInput.push(cyclicInput);
-  await assert.rejects(provider.provideTokenCount({}, cyclicInput), TypeError);
+  const cyclicInput = {};
+  cyclicInput.self = cyclicInput;
+  await assert.rejects(
+    provider.provideTokenCount(
+      {},
+      {
+        role: vscode.LanguageModelChatMessageRole.Assistant,
+        content: [
+          new vscode.LanguageModelToolCallPart("call", "run", cyclicInput),
+        ],
+      },
+    ),
+    TypeError,
+  );
   assertLogged(/circular/);
+  const message = {
+    role: vscode.LanguageModelChatMessageRole.Assistant,
+    content: [
+      new vscode.LanguageModelToolCallPart("call", "run", { path: "тест.js" }),
+    ],
+  };
+  assert.ok(
+    (await provider.provideTokenCount({}, message)) >
+      (await provider.provideTokenCount({}, "run")),
+  );
 
   vscode.window.showErrorMessage = async () => {
     throw new Error("notification failed");
