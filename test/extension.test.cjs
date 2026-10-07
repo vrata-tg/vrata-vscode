@@ -353,6 +353,13 @@ test("native commands, masked input, silent discovery and secret events", async 
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
   await Promise.all(discoveryTasks);
+  await commands.get("vrata.debugStaging")();
+  assert.equal(
+    requests.filter((request) =>
+      request.url.startsWith("https://llm-billing-staging.ai.vladimirlebe.dev"),
+    ).length,
+    2,
+  );
   const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
@@ -365,7 +372,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(discovered[0][0].capabilities.imageInput, false);
   assert.equal(
     requests.length,
-    3,
+    5,
     "discovery must reuse the catalog returned by key validation",
   );
   assert.equal(inputOptions.password, true);
@@ -376,7 +383,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 5);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
