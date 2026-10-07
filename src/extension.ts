@@ -14,6 +14,7 @@ import {
 import {
   AccountError,
   API_ORIGIN,
+  STAGING_API_ORIGIN,
   BOT_URL,
   CredentialError,
   GatewayClient,
@@ -221,6 +222,30 @@ async function activateWithOutput(
     );
   }
   command("vrata.showLogs", () => output.show(true));
+  command("vrata.debugStaging", async () => {
+    if (!credentials.connected || !credentials.key)
+      throw new CredentialError("Врата AI не подключены. Вставьте API-ключ.");
+    const staging = new GatewayClient(
+      fetch,
+      (message) => output.info("[staging] " + message),
+      STAGING_API_ORIGIN,
+    );
+    const catalog = await staging.models(
+      credentials.key,
+      new AbortController().signal,
+    );
+    const { models, unavailable } = projectCatalog(catalog);
+    output.info(
+      "[staging] Каталог получен: доступно моделей " +
+        models.length +
+        "; пропущено " +
+        unavailable.length +
+        ".",
+    );
+    await vscode.window.showInformationMessage(
+      "Staging-проверка завершена. Доступно моделей: " + models.length + ".",
+    );
+  });
   let editing = false;
   command("vrata.setApiKey", async (keys) => {
     if (editing) return;
@@ -347,6 +372,7 @@ async function activateWithOutput(
             ]
           : []),
         { label: "Открыть журнал", command: "vrata.showLogs" },
+        { label: "Проверить staging-каталог", command: "vrata.debugStaging" },
         { label: "Скопировать диагностику", command: "vrata.copyDiagnostics" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
       ],

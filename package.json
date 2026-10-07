@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -70,6 +70,11 @@
       {
         "command": "vrata.showLogs",
         "title": "Открыть журнал",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.debugStaging",
+        "title": "Проверить staging-каталог",
         "category": "Врата AI"
       }
     ],
