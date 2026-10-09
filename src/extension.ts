@@ -21,7 +21,6 @@ import {
 } from "./gateway";
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
-import { registerVrataAgent } from "./agent";
 
 function text(parts: readonly unknown[]): string {
   return parts
@@ -207,13 +206,6 @@ async function activateWithOutput(
     void vscode.commands
       .executeCommand("setContext", "vrata.connected", credentials.connected)
       .then(undefined, (error) => logError(error));
-    void vscode.commands
-      .executeCommand(
-        "setContext",
-        "vrata.agentAvailable",
-        typeof vscode.chat?.createChatParticipant === "function",
-      )
-      .then(undefined, (error) => logError(error));
   }
   function command(id: string, action: (keys: string[]) => unknown): void {
     context.subscriptions.push(
@@ -353,18 +345,6 @@ async function activateWithOutput(
     ),
     vscode.window.registerTreeDataProvider("vrata.panel", panel),
   );
-  try {
-    context.subscriptions.push(
-      registerVrataAgent({
-        modelId: () => panel.modelId,
-        reasoning: () => panel.reasoning,
-        logError,
-      }),
-    );
-  } catch (error) {
-    // The Chat Participant API may be unavailable in stripped-down builds.
-    logError(error);
-  }
   command("vrata.openWalkthrough", () =>
     vscode.commands.executeCommand(
       "workbench.action.openWalkthrough",
@@ -515,6 +495,10 @@ async function activateWithOutput(
               const messagesTransport =
                 projectCatalog(credentials.catalog).transports[model.id] ===
                 "messages";
+              const effort = resolveReasoning(options, panel.reasoning);
+              output.info(
+                `Запрос: модель ${model.id}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
+              );
               const requestId = await (
                 messagesTransport ? streamMessages : streamChat
               )(
@@ -549,9 +533,7 @@ async function activateWithOutput(
                       model: model.id,
                       messages: toMessages(messages),
                       max_tokens: model.maxOutputTokens,
-                      ...chatCompletionsReasoning(
-                        resolveReasoning(options, panel.reasoning),
-                      ),
+                      ...chatCompletionsReasoning(effort),
                       ...(options.tools?.length
                         ? {
                             tools: options.tools.map((tool) => ({

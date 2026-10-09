@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -32,25 +32,6 @@
         }
       ]
     },
-    "chatParticipants": [
-      {
-        "id": "vrata.agent",
-        "name": "vrata",
-        "fullName": "Врата AI",
-        "description": "Готовый агент на моделях Врат AI: встроенный чат редактора, инструменты, файлы и терминал.",
-        "isSticky": true,
-        "commands": [
-          {
-            "name": "fix",
-            "description": "Исправить проблемы в текущем файле или выделении"
-          },
-          {
-            "name": "explain",
-            "description": "Объяснить выбранный код"
-          }
-        ]
-      }
-    ],
     "languageModelChatProviders": [
       {
         "vendor": "vrata",
@@ -97,11 +78,6 @@
       {
         "command": "vrata.openCopilotChat",
         "title": "Открыть Copilot Chat",
-        "category": "Врата AI"
-      },
-      {
-        "command": "vrata.openAgentChat",
-        "title": "Открыть агента Врата в чате",
         "category": "Врата AI"
       },
       {
@@ -153,17 +129,6 @@
             ]
           },
           {
-            "id": "agent",
-            "title": "Откройте агента Врата",
-            "description": "У расширения есть собственный агент во встроенном чате редактора — Copilot не требуется. Агент работает на выбранной модели Врат AI с вашим reasoning level.\n[Открыть агента Врата](command:vrata.openAgentChat)",
-            "media": {
-              "markdown": "media/agent.md"
-            },
-            "completionEvents": [
-              "onContext:vrata.agentAvailable"
-            ]
-          },
-          {
             "id": "utility",
             "title": "Настройте служебную модель",
             "description": "Нажмите кнопку ниже и выберите `Main Agent Model`.\n[Настроить служебную модель](command:vrata.utilitySettings)",
@@ -174,13 +139,12 @@
           {
             "id": "copilot",
             "title": "Откройте GitHub Copilot Chat (необязательно)",
-            "description": "Если установлен GitHub Copilot Chat, его чат тоже видит модели Врат AI. Расширение работает и без Copilot: собственный агент Врата доступен всегда.\n[Открыть Copilot Chat](command:vrata.openCopilotChat)",
+            "description": "Если установлен GitHub Copilot Chat, его чат тоже видит модели Врат AI. Расширение работает и без Copilot: штатный агент чата работает с моделями Врат AI напрямую.\n[Открыть Copilot Chat](command:vrata.openCopilotChat)",
             "media": {
               "markdown": "media/copilot.md"
             },
             "completionEvents": [
-              "onContext:vrata.copilotChatAvailable",
-              "onContext:vrata.agentAvailable"
+              "onContext:vrata.copilotChatAvailable"
             ]
           }
         ]
