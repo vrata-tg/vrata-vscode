@@ -2,7 +2,12 @@ import * as vscode from "vscode";
 import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
-import { projectCatalog } from "./catalog";
+import {
+  fallbackModelId,
+  projectCatalog,
+  ROUTED_MODEL_ID,
+  ROUTED_MODEL_NAME,
+} from "./catalog";
 import { estimateTokens } from "./token-count";
 import { accountTooltip, rubles } from "./account";
 import { requestError } from "./request-errors";
@@ -14,10 +19,13 @@ import {
 import {
   AccountError,
   API_ORIGIN,
+  STAGING_API_ORIGIN,
   BOT_URL,
   CredentialError,
   GatewayClient,
 } from "./gateway";
+import { VrataPanel, registerPanelCommands } from "./panel";
+import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
 
 function text(parts: readonly unknown[]): string {
   return parts
@@ -123,6 +131,8 @@ async function activateWithOutput(
           void credentials.loadAccount().catch((error) => logError(error, key));
         }
       }
+      panel.refresh();
+      panel.maybeAutoRefresh();
     },
   );
   function logError(error: unknown, ...keys: (string | undefined)[]): void {
@@ -221,6 +231,30 @@ async function activateWithOutput(
     );
   }
   command("vrata.showLogs", () => output.show(true));
+  command("vrata.debugStaging", async () => {
+    if (!credentials.connected || !credentials.key)
+      throw new CredentialError("Врата AI не подключены. Вставьте API-ключ.");
+    const staging = new GatewayClient(
+      fetch,
+      (message) => output.info("[staging] " + message),
+      STAGING_API_ORIGIN,
+    );
+    const catalog = await staging.models(
+      credentials.key,
+      new AbortController().signal,
+    );
+    const { models, unavailable } = projectCatalog(catalog);
+    output.info(
+      "[staging] Каталог получен: доступно моделей " +
+        models.length +
+        "; пропущено " +
+        unavailable.length +
+        ".",
+    );
+    await vscode.window.showInformationMessage(
+      "Staging-проверка завершена. Доступно моделей: " + models.length + ".",
+    );
+  });
   let editing = false;
   command("vrata.setApiKey", async (keys) => {
     if (editing) return;
@@ -305,6 +339,18 @@ async function activateWithOutput(
   command("vrata.getApiKey", () =>
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
   );
+  const panel = new VrataPanel(context, credentials, (error) =>
+    logError(error),
+  );
+  panel.onExternalChange = () => changes.fire();
+  context.subscriptions.push(
+    panel,
+    ...registerPanelCommands(
+      panel,
+      () => projectCatalog(credentials.catalog).models,
+    ),
+    vscode.window.registerTreeDataProvider("vrata.panel", panel),
+  );
   command("vrata.openWalkthrough", () =>
     vscode.commands.executeCommand(
       "workbench.action.openWalkthrough",
@@ -335,6 +381,8 @@ async function activateWithOutput(
             : "Вставить API-ключ",
           command: "vrata.setApiKey",
         },
+        { label: "Выбрать модель", command: "vrata.selectModel" },
+        { label: "Выбрать reasoning level", command: "vrata.selectReasoning" },
         { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
         ...(credentials.connected
           ? [
@@ -347,6 +395,7 @@ async function activateWithOutput(
             ]
           : []),
         { label: "Открыть журнал", command: "vrata.showLogs" },
+        { label: "Проверить staging-каталог", command: "vrata.debugStaging" },
         { label: "Скопировать диагностику", command: "vrata.copyDiagnostics" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
       ],
@@ -381,6 +430,14 @@ async function activateWithOutput(
   updateStatus();
   status.show();
 
+  void vscode.commands
+    .executeCommand(
+      "setContext",
+      "vrata.copilotChatAvailable",
+      vscode.extensions.getExtension("GitHub.copilot-chat") !== undefined,
+    )
+    .then(undefined, (error: unknown) => logError(error));
+
   context.subscriptions.push(
     vscode.lm.registerLanguageModelChatProvider("vrata", {
       onDidChangeLanguageModelChatInformation: changes.event,
@@ -401,16 +458,39 @@ async function activateWithOutput(
         }
         if (token.isCancellationRequested) return [];
         const { models } = projectCatalog(credentials.catalog);
-        return models.map((model) =>
-          credentials.catalogStale
-            ? {
-                ...model,
-                detail: "Каталог устарел",
-                tooltip:
-                  "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
-              }
-            : model,
+        const routed: vscode.LanguageModelChatInformation[] = models.map(
+          (model) =>
+            credentials.catalogStale
+              ? {
+                  ...model,
+                  detail: "Каталог устарел",
+                  tooltip:
+                    "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
+                }
+              : model,
         );
+        // A single stable chat entry that always routes to the panel's
+        // chosen model with its reasoning level — pick it once in the chat.
+        const target = panel.modelId ?? "(по умолчанию чата)";
+        routed.push({
+          id: ROUTED_MODEL_ID,
+          name: ROUTED_MODEL_NAME,
+          family: "vrata",
+          version: ROUTED_MODEL_ID,
+          maxInputTokens: Math.max(
+            1,
+            ...routed.map((model) => model.maxInputTokens),
+          ),
+          maxOutputTokens: Math.max(
+            1,
+            ...routed.map((model) => model.maxOutputTokens),
+          ),
+          capabilities: { toolCalling: true, imageInput: false },
+          detail: `→ ${target}${panel.reasoning ? ` · reasoning ${panel.reasoning}` : ""}`,
+          tooltip:
+            "Маршрутизируется расширением на модель из панели «Врата AI» с её reasoning level. Смените модель или reasoning в панели — эта запись следует за выбором.",
+        });
+        return routed;
       },
       async provideTokenCount(_model, input) {
         try {
@@ -441,9 +521,19 @@ async function activateWithOutput(
             if (token.isCancellationRequested) controller.abort();
             signal = AbortSignal.any([controller.signal, session.signal]);
             try {
+              const catalog = projectCatalog(credentials.catalog);
+              const targetId =
+                model.id === ROUTED_MODEL_ID
+                  ? (panel.modelId ??
+                    fallbackModelId(credentials.catalog) ??
+                    model.id)
+                  : model.id;
               const messagesTransport =
-                projectCatalog(credentials.catalog).transports[model.id] ===
-                "messages";
+                catalog.transports[targetId] === "messages";
+              const effort = resolveReasoning(options, panel.reasoning);
+              output.info(
+                `Запрос: модель ${targetId}${model.id === ROUTED_MODEL_ID ? " (маршрут Врата AI)" : ""}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
+              );
               const requestId = await (
                 messagesTransport ? streamMessages : streamChat
               )(
@@ -451,7 +541,7 @@ async function activateWithOutput(
                 session.key,
                 messagesTransport
                   ? {
-                      model: model.id,
+                      model: targetId,
                       messages: toAnthropicMessages(toMessages(messages)),
                       max_tokens: model.maxOutputTokens,
                       ...(options.tools?.length
@@ -475,9 +565,10 @@ async function activateWithOutput(
                         : {}),
                     }
                   : {
-                      model: model.id,
+                      model: targetId,
                       messages: toMessages(messages),
                       max_tokens: model.maxOutputTokens,
+                      ...chatCompletionsReasoning(effort),
                       ...(options.tools?.length
                         ? {
                             tools: options.tools.map((tool) => ({

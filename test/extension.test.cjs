@@ -31,11 +31,21 @@ test("native commands, masked input, silent discovery and secret events", async 
     provider,
     secretListener;
   let copied;
+  let copilotInstalled = false;
+  const treeProviders = [];
+  const quickPicks = [];
+  let quickPick = null;
+  const globalValues = new Map([["welcomeShown", true]]);
   const disposable = { dispose() {} };
   const context = {
     extension: { packageJSON: { version: "0.1.6" } },
     subscriptions: [],
-    globalState: { get: () => true },
+    globalState: {
+      get: (key) => globalValues.get(key),
+      update: async (key, value) => {
+        globalValues.set(key, value);
+      },
+    },
     secrets: {
       get: async (key) => {
         if (readFailure) throw readFailure;
@@ -128,9 +138,17 @@ test("native commands, masked input, silent discovery and secret events", async 
           statusShown = true;
         },
       }),
-      showQuickPick: async () => {
+      registerTreeDataProvider: (viewId, treeProvider) => {
+        assert.equal(viewId, "vrata.panel");
+        treeProviders.push(treeProvider);
+        return disposable;
+      },
+      showQuickPick: async (items) => {
         manageCount++;
-        return undefined;
+        const picked =
+          typeof quickPick === "function" ? quickPick(items) : undefined;
+        quickPicks.push(picked);
+        return picked;
       },
       showInputBox: async (options) => {
         inputCount++;
@@ -165,6 +183,12 @@ test("native commands, masked input, silent discovery and secret events", async 
         executed.push([id, ...args]);
         if (id === "setContext" && contextFailure) throw contextFailure;
         return commands.get(id)?.(...args);
+      },
+    },
+    extensions: {
+      getExtension: (id) => {
+        executed.push(["extensions.getExtension", id]);
+        return copilotInstalled ? { id } : undefined;
       },
     },
     lm: {
@@ -353,19 +377,29 @@ test("native commands, masked input, silent discovery and secret events", async 
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
   await Promise.all(discoveryTasks);
+  await commands.get("vrata.debugStaging")();
+  assert.equal(
+    requests.filter((request) =>
+      request.url.startsWith("https://llm-billing-staging.ai.vladimirlebe.dev"),
+    ).length,
+    2,
+  );
   const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
   ]);
   assert.deepEqual(
     discovered.map((models) => models.map((model) => model.id)),
-    [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
+    [
+      ["gpt-5.6-terra", "vrata-auto"],
+      ["gpt-5.6-terra", "vrata-auto"],
+    ],
   );
   assert.equal(discovered[0][0].maxInputTokens, 120000);
   assert.equal(discovered[0][0].capabilities.imageInput, false);
   assert.equal(
     requests.length,
-    3,
+    5,
     "discovery must reuse the catalog returned by key validation",
   );
   assert.equal(inputOptions.password, true);
@@ -376,7 +410,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 5);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
@@ -489,7 +523,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     (
       await provider.provideLanguageModelChatInformation({ silent: true }, {})
     ).map((model) => model.id),
-    ["gpt-5.6-terra"],
+    ["gpt-5.6-terra", "vrata-auto"],
   );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;

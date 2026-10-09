@@ -1,7 +1,11 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { GatewayClient, API_ORIGIN } = require("../dist/gateway");
+const {
+  GatewayClient,
+  API_ORIGIN,
+  STAGING_API_ORIGIN,
+} = require("../dist/gateway");
 const { Credentials } = require("../dist/credentials");
 const { formatError } = require("../dist/diagnostics");
 
@@ -67,6 +71,27 @@ test("real HTTP chain validates with GET only; zero balance and empty catalog ar
   assert.ok(
     calls.every((call) => call.method === "GET" && call.path === "/v1/models"),
   );
+});
+
+test("production and staging origins are explicit and separate", async () => {
+  const calls = [];
+  const create = (origin) =>
+    new GatewayClient(
+      async (url) => {
+        calls.push(url);
+        return new Response(JSON.stringify({ data: [] }));
+      },
+      () => {},
+      origin,
+    );
+  await create(API_ORIGIN).models("key", new AbortController().signal);
+  await create(STAGING_API_ORIGIN).models("key", new AbortController().signal);
+  assert.deepEqual(calls, [
+    API_ORIGIN + "/v1/models",
+    API_ORIGIN + "/v1/models",
+    STAGING_API_ORIGIN + "/v1/models",
+    STAGING_API_ORIGIN + "/v1/models",
+  ]);
 });
 
 test("network errors propagate unchanged and a cancelled request does not start fetch", async () => {
