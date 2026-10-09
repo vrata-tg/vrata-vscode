@@ -7,9 +7,12 @@ const {
 } = require("../dist/reasoning");
 
 test("reasoning levels normalize strictly", () => {
+  assert.equal(normalizeReasoning("none"), "none");
   assert.equal(normalizeReasoning("low"), "low");
   assert.equal(normalizeReasoning("medium"), "medium");
   assert.equal(normalizeReasoning("high"), "high");
+  assert.equal(normalizeReasoning("xhigh"), "xhigh");
+  assert.equal(normalizeReasoning("max"), "max");
   assert.equal(normalizeReasoning("ultra"), undefined);
   assert.equal(normalizeReasoning(""), undefined);
   assert.equal(normalizeReasoning(null), undefined);

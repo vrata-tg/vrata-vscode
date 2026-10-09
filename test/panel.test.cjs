@@ -244,11 +244,11 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     "panel shows the remaining key quota",
   );
   assert.ok(
-    items.some(
+    !items.some(
       (item) =>
         item.command && item.command.command === "vrata.openCopilotChat",
     ),
-    "panel offers the Copilot Chat action",
+    "panel no longer offers the Copilot Chat action",
   );
   assert.ok(
     items.some(
@@ -271,7 +271,8 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
 
   // 4. Reasoning level persists and reaches the chat_completions payload.
-  quickPickQueue.push((items) => items.find((item) => item.label === "high"));
+  //    The picker offers the full gateway set plus the server default.
+  quickPickQueue.push((items) => items.find((item) => item.label === "High"));
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), "high");
   items = await treeProvider.getChildren();
@@ -423,5 +424,70 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     toolInputs.map((tool) => tool.name),
     ["copilot_searchWorkspaceSymbols"],
     "agent invokes editor tools (built-in + Copilot tools alike)",
+  );
+
+  // 10. Full reasoning set: none, xhigh and max persist and ride the payload.
+  for (const [label, effort] of [
+    ["None", "none"],
+    ["Extra High", "xhigh"],
+    ["Max", "max"],
+  ]) {
+    quickPickQueue.push((pickerItems) =>
+      pickerItems.find((item) => item.label === label),
+    );
+    await commands.get("vrata.selectReasoning")();
+    assert.equal(
+      globalValues.get("vrata.panelReasoning"),
+      effort,
+      `reasoning ${label} persists`,
+    );
+  }
+  await provider.provideLanguageModelChatResponse(
+    models[0],
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    {},
+    { report: () => {} },
+    {
+      isCancellationRequested: false,
+      onCancellationRequested: () => disposable,
+    },
+  );
+  assert.equal(
+    JSON.parse(
+      requests.findLast((request) => request.options.method === "POST").options
+        .body,
+    ).reasoning_effort,
+    "max",
+    "the last picked level reaches the payload",
+  );
+  // Back to the server default: the stored level clears.
+  quickPickQueue.push((pickerItems) =>
+    pickerItems.find((item) => item.label === "По умолчанию сервера"),
+  );
+  await commands.get("vrata.selectReasoning")();
+  assert.equal(globalValues.get("vrata.panelReasoning"), undefined);
+
+  // 11. Opening the agent chat never types into the input: the command runs
+  //     without a query payload.
+  executed.length = 0;
+  await commands.get("vrata.openAgentChat")();
+  const chatOpen = executed.find(([id]) => id === "workbench.action.chat.open");
+  assert.ok(chatOpen, "agent action opens the built-in chat");
+  assert.equal(
+    chatOpen.length,
+    1,
+    "chat opens with no @vrata query injected into the input",
+  );
+
+  // 12. Picking a model confirms it and persists the choice.
+  notices.length = 0;
+  quickPickQueue.push((pickerItems) =>
+    pickerItems.find((item) => item.label === "glm-5.3-flash"),
+  );
+  await commands.get("vrata.selectModel")();
+  assert.equal(globalValues.get("vrata.panelModel"), "glm-5.3-flash");
+  assert.ok(
+    notices.some((message) => message.includes("glm-5.3-flash")),
+    "model choice is confirmed with a notice",
   );
 });
