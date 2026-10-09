@@ -50,12 +50,18 @@ export class VrataPanel implements vscode.Disposable {
   async setModel(id: string): Promise<void> {
     await this.context.globalState.update(MODEL_STATE_KEY, id);
     this.refresh();
+    // The routed chat entry advertises the new target in its detail line.
+    this.onExternalChange?.();
   }
 
   async setReasoning(level: ReasoningLevel | undefined): Promise<void> {
     await this.context.globalState.update(REASONING_STATE_KEY, level);
     this.refresh();
+    this.onExternalChange?.();
   }
+
+  /** Wired by the extension: fires the provider's change event. */
+  onExternalChange?: () => void;
 
   refresh(): void {
     this.tree.fire();

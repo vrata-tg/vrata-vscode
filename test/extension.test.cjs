@@ -390,7 +390,10 @@ test("native commands, masked input, silent discovery and secret events", async 
   ]);
   assert.deepEqual(
     discovered.map((models) => models.map((model) => model.id)),
-    [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
+    [
+      ["gpt-5.6-terra", "vrata-auto"],
+      ["gpt-5.6-terra", "vrata-auto"],
+    ],
   );
   assert.equal(discovered[0][0].maxInputTokens, 120000);
   assert.equal(discovered[0][0].capabilities.imageInput, false);
@@ -520,7 +523,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     (
       await provider.provideLanguageModelChatInformation({ silent: true }, {})
     ).map((model) => model.id),
-    ["gpt-5.6-terra"],
+    ["gpt-5.6-terra", "vrata-auto"],
   );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;

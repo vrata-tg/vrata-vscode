@@ -2,7 +2,12 @@ import * as vscode from "vscode";
 import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
-import { projectCatalog } from "./catalog";
+import {
+  fallbackModelId,
+  projectCatalog,
+  ROUTED_MODEL_ID,
+  ROUTED_MODEL_NAME,
+} from "./catalog";
 import { estimateTokens } from "./token-count";
 import { accountTooltip, rubles } from "./account";
 import { requestError } from "./request-errors";
@@ -337,6 +342,7 @@ async function activateWithOutput(
   const panel = new VrataPanel(context, credentials, (error) =>
     logError(error),
   );
+  panel.onExternalChange = () => changes.fire();
   context.subscriptions.push(
     panel,
     ...registerPanelCommands(
@@ -452,16 +458,39 @@ async function activateWithOutput(
         }
         if (token.isCancellationRequested) return [];
         const { models } = projectCatalog(credentials.catalog);
-        return models.map((model) =>
-          credentials.catalogStale
-            ? {
-                ...model,
-                detail: "Каталог устарел",
-                tooltip:
-                  "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
-              }
-            : model,
+        const routed: vscode.LanguageModelChatInformation[] = models.map(
+          (model) =>
+            credentials.catalogStale
+              ? {
+                  ...model,
+                  detail: "Каталог устарел",
+                  tooltip:
+                    "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
+                }
+              : model,
         );
+        // A single stable chat entry that always routes to the panel's
+        // chosen model with its reasoning level — pick it once in the chat.
+        const target = panel.modelId ?? "(по умолчанию чата)";
+        routed.push({
+          id: ROUTED_MODEL_ID,
+          name: ROUTED_MODEL_NAME,
+          family: "vrata",
+          version: ROUTED_MODEL_ID,
+          maxInputTokens: Math.max(
+            1,
+            ...routed.map((model) => model.maxInputTokens),
+          ),
+          maxOutputTokens: Math.max(
+            1,
+            ...routed.map((model) => model.maxOutputTokens),
+          ),
+          capabilities: { toolCalling: true, imageInput: false },
+          detail: `→ ${target}${panel.reasoning ? ` · reasoning ${panel.reasoning}` : ""}`,
+          tooltip:
+            "Маршрутизируется расширением на модель из панели «Врата AI» с её reasoning level. Смените модель или reasoning в панели — эта запись следует за выбором.",
+        });
+        return routed;
       },
       async provideTokenCount(_model, input) {
         try {
@@ -492,12 +521,18 @@ async function activateWithOutput(
             if (token.isCancellationRequested) controller.abort();
             signal = AbortSignal.any([controller.signal, session.signal]);
             try {
+              const catalog = projectCatalog(credentials.catalog);
+              const targetId =
+                model.id === ROUTED_MODEL_ID
+                  ? (panel.modelId ??
+                    fallbackModelId(credentials.catalog) ??
+                    model.id)
+                  : model.id;
               const messagesTransport =
-                projectCatalog(credentials.catalog).transports[model.id] ===
-                "messages";
+                catalog.transports[targetId] === "messages";
               const effort = resolveReasoning(options, panel.reasoning);
               output.info(
-                `Запрос: модель ${model.id}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
+                `Запрос: модель ${targetId}${model.id === ROUTED_MODEL_ID ? " (маршрут Врата AI)" : ""}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
               const requestId = await (
                 messagesTransport ? streamMessages : streamChat
@@ -506,7 +541,7 @@ async function activateWithOutput(
                 session.key,
                 messagesTransport
                   ? {
-                      model: model.id,
+                      model: targetId,
                       messages: toAnthropicMessages(toMessages(messages)),
                       max_tokens: model.maxOutputTokens,
                       ...(options.tools?.length
@@ -530,7 +565,7 @@ async function activateWithOutput(
                         : {}),
                     }
                   : {
-                      model: model.id,
+                      model: targetId,
                       messages: toMessages(messages),
                       max_tokens: model.maxOutputTokens,
                       ...chatCompletionsReasoning(effort),
