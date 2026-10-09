@@ -114,12 +114,13 @@ export class VrataPanel implements vscode.Disposable {
     const model: TreeItem = {
       label: `Модель: ${this.modelId ?? "по умолчанию чата"}`,
       tooltip:
-        "Модель агента @vrata: применяется к его следующему запросу. Меняется кнопкой «Выбрать модель».",
+        "Preferred-модель Врат AI: подставляется агентом @vrata в каждый запрос и видна в меню моделей чата (провайдер «Врата AI»). Фактические модель и reasoning каждого запроса — в журнале Output → Врата AI.",
       contextValue: "model",
     };
     const reasoning: TreeItem = {
       label: `Reasoning: ${this.reasoning ?? "по умолчанию сервера"}`,
-      tooltip: "Передаётся как reasoning_effort в payload каждого запроса.",
+      tooltip:
+        "Передаётся как reasoning_effort в payload каждого запроса моделей Врат AI. Проверить: Output → Врата AI.",
       contextValue: "reasoning",
     };
     const items = [connection, model, reasoning];
@@ -217,7 +218,6 @@ export class VrataPanel implements vscode.Disposable {
     add("Выбрать reasoning level", "vrata.selectReasoning", "layers");
     if (state !== "not_connected")
       add("Обновить", "vrata.refreshBalance", "refresh");
-    add("Открыть агента Врата в чате", "vrata.openAgentChat", "sparkle");
     add("Открыть бота", "vrata.getApiKey", "globe");
     return actions;
   }
@@ -249,9 +249,6 @@ export async function pickModel(
   });
   if (!choice) return;
   await panel.setModel(choice.label);
-  await vscode.window.showInformationMessage(
-    `Модель Врат AI: ${choice.label}. Агент @vrata будет использовать её в следующем запросе.`,
-  );
 }
 
 export async function pickReasoning(panel: VrataPanel): Promise<void> {
@@ -294,24 +291,6 @@ export async function openCopilotChat(): Promise<boolean> {
   return true;
 }
 
-/** Opens the built-in chat view. The agent must be picked manually. */
-export async function openAgentChat(): Promise<boolean> {
-  let failure: unknown;
-  for (const command of [
-    "workbench.action.chat.open",
-    "workbench.panel.chat.view.copilot",
-  ]) {
-    try {
-      await vscode.commands.executeCommand(command);
-      return true;
-    } catch (error) {
-      failure = error;
-    }
-  }
-  if (failure) throw failure;
-  return false;
-}
-
 export function registerPanelCommands(
   panel: VrataPanel,
   catalog: () => readonly { id: string }[],
@@ -336,23 +315,5 @@ export function registerPanelCommands(
           ),
         );
     }),
-    vscode.commands.registerCommand("vrata.openAgentChat", () =>
-      openAgentChatCommand(panel),
-    ),
   ];
-}
-
-async function openAgentChatCommand(panel: VrataPanel): Promise<void> {
-  try {
-    if (await openAgentChat()) return;
-  } catch (error) {
-    // A missing built-in chat command is expected on older editors.
-    panel.report(error);
-    return;
-  }
-  panel.report(
-    new Error(
-      "Встроенный чат недоступен в этой версии редактора. Откройте панель чата вручную и выберите агента @vrata в меню участников.",
-    ),
-  );
 }

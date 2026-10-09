@@ -15,7 +15,6 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   const treeProviders = [];
   let copilotInstalled = false;
   const quickPickQueue = [];
-  const chatParticipants = [];
   const context = {
     extension: { packageJSON: { version: "0.1.7" } },
     subscriptions: [],
@@ -53,16 +52,6 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       }
     },
     LanguageModelToolResultPart: class {},
-    LanguageModelChatMessage: {
-      User: (content, name) => ({ role: 1, content, name }),
-      Assistant: (content, name) => ({ role: 2, content, name }),
-    },
-    CancellationError: class extends Error {},
-    ChatResponseProgressPart: class {
-      constructor(value) {
-        this.value = value;
-      }
-    },
     EventEmitter: class {
       listeners = [];
       event = (listener) => {
@@ -134,13 +123,6 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       registerLanguageModelChatProvider: (vendor, value) => {
         assert.equal(vendor, "vrata");
         provider = value;
-        return disposable;
-      },
-    },
-    chat: {
-      createChatParticipant: (id, handler) => {
-        assert.equal(id, "vrata.agent");
-        chatParticipants.push({ id, handler });
         return disposable;
       },
     },
@@ -251,19 +233,20 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     "panel no longer offers the Copilot Chat action",
   );
   assert.ok(
-    items.some(
+    !items.some(
       (item) => item.command && item.command.command === "vrata.openAgentChat",
     ),
-    "panel offers the built-in agent action",
+    "no custom chat-participant action: the standard chat agent is used",
   );
-  assert.equal(chatParticipants.length, 1, "built-in @vrata agent registered");
 
-  // 3. Model choice persists in globalState and shows in the panel.
+  // 3. Model choice persists in globalState and shows in the panel — silently.
+  notices.length = 0;
   quickPickQueue.push((items) =>
     items.find((item) => item.label === "claude-haiku-4-5"),
   );
   await commands.get("vrata.selectModel")();
   assert.equal(globalValues.get("vrata.panelModel"), "claude-haiku-4-5");
+  assert.equal(notices.length, 0, "model choice shows no notification");
   items = await treeProvider.getChildren();
   assert.ok(
     items.some((item) => item.label === "Модель: claude-haiku-4-5"),
@@ -353,77 +336,17 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     checkedRow.label,
   );
 
-  // 9. The built-in @vrata agent: model from the panel, reasoning in modelOptions,
-  //    tool loop through vscode.lm.invokeTool.
-  const agent = chatParticipants[0];
-  const agentSend = [];
-  const agentRequests = [];
-  const agentModel = {
-    id: "glm-5.3-flash",
-    sendRequest: async (_messages, options, _token) => {
-      agentSend.push(options);
-      agentRequests.push(
-        requests.findLast((request) => request.options.method === "POST"),
-      );
-      return {
-        stream: (async function* () {
-          if (agentSend.length === 1)
-            yield new vscode.LanguageModelToolCallPart(
-              "call-1",
-              "copilot_searchWorkspaceSymbols",
-              { query: "files" },
-            );
-          yield new vscode.LanguageModelTextPart("done");
-        })(),
-      };
-    },
-  };
-  vscode.lm.selectChatModels = async (selector) =>
-    selector?.id === "glm-5.3-flash" || selector?.id === "claude-haiku-4-5"
-      ? [{ ...agentModel, id: selector.id }]
-      : [];
-  const toolInputs = [];
-  vscode.lm.invokeTool = async (name, options) => {
-    toolInputs.push({ name, input: options.input });
-    return {
-      content: [new vscode.LanguageModelTextPart("tool ok")],
-    };
-  };
-  const pushed = [];
-  const chatToken = {
-    isCancellationRequested: false,
-    throwIfCancellationRequested: () => {},
-    onCancellationRequested: () => disposable,
-  };
-  await agent.handler(
+  // 9. Every provider request is logged with model, transport and effort —
+  //    the observable trace for standard-agent chat requests.
+  await provider.provideLanguageModelChatResponse(
+    models[0],
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    {},
+    { report: () => {} },
     {
-      prompt: "list files",
-      tools: [{ name: "copilot_searchWorkspaceSymbols" }],
-      toolMode: 0,
-      toolInvocationToken: {},
+      isCancellationRequested: false,
+      onCancellationRequested: () => disposable,
     },
-    { history: [] },
-    {
-      markdown: (value) => pushed.push(String(value)),
-      push: async () => {},
-    },
-    chatToken,
-  );
-  assert.equal(agentSend.length, 2, "agent issues both loop requests");
-  assert.equal(
-    agentSend[0].modelOptions.reasoningEffort,
-    "high",
-    "agent forwards the stored reasoning level in modelOptions",
-  );
-  assert.equal(
-    JSON.parse(agentRequests[0].options.body).model,
-    "glm-5.3-flash",
-    "provider request used the panel-selected model",
-  );
-  assert.deepEqual(
-    toolInputs.map((tool) => tool.name),
-    ["copilot_searchWorkspaceSymbols"],
-    "agent invokes editor tools (built-in + Copilot tools alike)",
   );
 
   // 10. Full reasoning set: none, xhigh and max persist and ride the payload.
@@ -467,27 +390,12 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), undefined);
 
-  // 11. Opening the agent chat never types into the input: the command runs
-  //     without a query payload.
-  executed.length = 0;
-  await commands.get("vrata.openAgentChat")();
-  const chatOpen = executed.find(([id]) => id === "workbench.action.chat.open");
-  assert.ok(chatOpen, "agent action opens the built-in chat");
-  assert.equal(
-    chatOpen.length,
-    1,
-    "chat opens with no @vrata query injected into the input",
-  );
-
-  // 12. Picking a model confirms it and persists the choice.
+  // 11. Picking a model stays silent: the panel row already shows the choice.
   notices.length = 0;
   quickPickQueue.push((pickerItems) =>
     pickerItems.find((item) => item.label === "glm-5.3-flash"),
   );
   await commands.get("vrata.selectModel")();
   assert.equal(globalValues.get("vrata.panelModel"), "glm-5.3-flash");
-  assert.ok(
-    notices.some((message) => message.includes("glm-5.3-flash")),
-    "model choice is confirmed with a notice",
-  );
+  assert.equal(notices.length, 0, "model choice shows no notification");
 });
