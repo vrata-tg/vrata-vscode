@@ -269,8 +269,13 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   assert.deepEqual(
     models.map((model) => model.id),
-    ["glm-5.3-flash", "claude-haiku-4-5"],
+    ["glm-5.3-flash", "claude-haiku-4-5", "vrata-auto"],
   );
+  // The routed entry advertises the panel's current target and reasoning.
+  const routedEntry = models.find((model) => model.id === "vrata-auto");
+  assert.ok(routedEntry, "the stable routed entry is exposed to the chat");
+  assert.match(routedEntry.detail, /→ claude-haiku-4-5/);
+  assert.match(routedEntry.detail, /reasoning high/);
   const parts = [];
   await provider.provideLanguageModelChatResponse(
     models[0],
@@ -306,6 +311,45 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   assert.equal(overrideBody.reasoning_effort, "low");
 
+  // 5a. The routed chat entry sends the PANEL's model to the gateway,
+  //     never the synthetic vrata-auto id, and keeps the stored reasoning.
+  await provider.provideLanguageModelChatResponse(
+    routedEntry,
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    {},
+    { report: (part) => parts.push(part) },
+    {
+      isCancellationRequested: false,
+      onCancellationRequested: () => disposable,
+    },
+  );
+  const routedBody = JSON.parse(
+    requests.findLast((request) => request.options.method === "POST").options
+      .body,
+  );
+  assert.equal(
+    routedBody.model,
+    "claude-haiku-4-5",
+    "routed entry sends the panel's chosen model",
+  );
+  assert.equal(routedBody.reasoning_effort, "high");
+
+  // 5b. Changing the panel model re-points the routed entry, including the
+  //     provider's advertised detail line.
+  quickPickQueue.push((pickerItems) =>
+    pickerItems.find((item) => item.label === "glm-5.3-flash"),
+  );
+  await commands.get("vrata.selectModel")();
+  const refreshed = await provider.provideLanguageModelChatInformation(
+    { silent: true },
+    {},
+  );
+  assert.match(
+    refreshed.find((model) => model.id === "vrata-auto").detail,
+    /→ glm-5\.3-flash/,
+    "routed entry follows the panel choice",
+  );
+
   // 6. Without Copilot the command falls back to the Marketplace offer.
   const answer = await commands.get("vrata.openCopilotChat")();
   assert.equal(answer, undefined);
@@ -320,9 +364,10 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     "available Copilot Chat opens the chat view",
   );
 
-  // 7. Restoring settings: a fresh panel reads the same globalState values.
+  // 7. Restoring settings: a fresh panel reads the same globalState values
+  //    (the panel model is glm-5.3-flash since step 5b).
   const restored = await treeProvider.getChildren();
-  assert.ok(restored.some((item) => item.label === "Модель: claude-haiku-4-5"));
+  assert.ok(restored.some((item) => item.label === "Модель: glm-5.3-flash"));
   assert.ok(restored.some((item) => item.label === "Reasoning: high"));
 
   // 8. The account row shows the server update time, device timezone, minute precision.
