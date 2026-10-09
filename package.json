@@ -14,6 +14,24 @@
     "onLanguageModelChatProvider:vrata"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vrata",
+          "title": "Врата AI",
+          "icon": "media/vrata.svg"
+        }
+      ]
+    },
+    "views": {
+      "vrata": [
+        {
+          "id": "vrata.panel",
+          "name": "Врата AI",
+          "type": "tree"
+        }
+      ]
+    },
     "languageModelChatProviders": [
       {
         "vendor": "vrata",
@@ -45,6 +63,21 @@
       {
         "command": "vrata.refreshBalance",
         "title": "Обновить баланс",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.selectModel",
+        "title": "Выбрать модель",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.selectReasoning",
+        "title": "Выбрать reasoning level",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.openCopilotChat",
+        "title": "Открыть Copilot Chat",
         "category": "Врата AI"
       },
       {
@@ -102,6 +135,17 @@
             "media": {
               "markdown": "media/utility.md"
             }
+          },
+          {
+            "id": "copilot",
+            "title": "Откройте GitHub Copilot Chat",
+            "description": "Copilot — стартовый агент: его chat уже работает с моделями Врат AI. Панель «Врата AI» в Activity Bar управляет подключением, моделью и reasoning level.\n[Открыть Copilot Chat](command:vrata.openCopilotChat)",
+            "media": {
+              "markdown": "media/copilot.md"
+            },
+            "completionEvents": [
+              "onContext:vrata.copilotChatAvailable"
+            ]
           }
         ]
       }
