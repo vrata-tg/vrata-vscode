@@ -220,6 +220,7 @@ export class VrataPanel implements vscode.Disposable {
       });
     };
     add("Подключить / заменить ключ", "vrata.setApiKey", "key");
+    add("Открыть чат", "vrata.openChat", "comment-discussion");
     add("Выбрать модель", "vrata.selectModel", "symbol-class");
     add("Выбрать reasoning level", "vrata.selectReasoning", "layers");
     if (state !== "not_connected")
@@ -297,6 +298,24 @@ export async function openCopilotChat(): Promise<boolean> {
   return true;
 }
 
+/** Opens the editor's built-in chat view. Never types into the input. */
+export async function openChat(): Promise<void> {
+  let failure: unknown;
+  for (const command of [
+    "workbench.action.chat.open",
+    "workbench.panel.chat.view.copilot",
+  ]) {
+    try {
+      await vscode.commands.executeCommand(command);
+      return;
+    } catch (error) {
+      failure = error;
+    }
+  }
+  if (failure) throw failure;
+  throw new Error("Встроенный чат недоступен в этой версии редактора.");
+}
+
 export function registerPanelCommands(
   panel: VrataPanel,
   catalog: () => readonly { id: string }[],
@@ -308,6 +327,14 @@ export function registerPanelCommands(
     vscode.commands.registerCommand("vrata.selectReasoning", () =>
       pickReasoning(panel),
     ),
+    vscode.commands.registerCommand("vrata.openChat", async () => {
+      try {
+        await openChat();
+      } catch (error) {
+        // A missing built-in chat command is expected on older editors.
+        panel.report(error);
+      }
+    }),
     vscode.commands.registerCommand("vrata.openCopilotChat", async () => {
       if (await openCopilotChat()) return;
       const install = await vscode.window.showInformationMessage(

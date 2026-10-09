@@ -227,10 +227,25 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   assert.ok(
     !items.some(
+      (item) => item.command && item.command.command === "vrata.openAgentChat",
+    ),
+    "no custom chat-participant action: the standard chat agent is used",
+  );
+  assert.ok(
+    !items.some(
       (item) =>
         item.command && item.command.command === "vrata.openCopilotChat",
     ),
     "panel no longer offers the Copilot Chat action",
+  );
+  assert.ok(
+    items.some(
+      (item) =>
+        item.command &&
+        item.command.command === "vrata.openChat" &&
+        item.label === "Открыть чат",
+    ),
+    "panel offers the open-chat action",
   );
   assert.ok(
     !items.some(
@@ -443,4 +458,16 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   await commands.get("vrata.selectModel")();
   assert.equal(globalValues.get("vrata.panelModel"), "glm-5.3-flash");
   assert.equal(notices.length, 0, "model choice shows no notification");
+
+  // 12. The open-chat action opens the built-in chat and never types into
+  //     the input (no query payload to workbench.action.chat.open).
+  executed.length = 0;
+  await commands.get("vrata.openChat")();
+  const chatOpen = executed.find(([id]) => id === "workbench.action.chat.open");
+  assert.ok(chatOpen, "open-chat action opens the built-in chat");
+  assert.equal(
+    chatOpen.length,
+    1,
+    "chat opens with no text injected into the input",
+  );
 });

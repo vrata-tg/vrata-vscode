@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -39,6 +39,15 @@
         "managementCommand": "vrata.manage"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "vrata.openChat",
+          "group": "navigation",
+          "when": "view == vrata.panel"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "vrata.manage",
@@ -74,6 +83,12 @@
         "command": "vrata.selectReasoning",
         "title": "Выбрать reasoning level",
         "category": "Врата AI"
+      },
+      {
+        "command": "vrata.openChat",
+        "title": "Открыть чат",
+        "category": "Врата AI",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "vrata.openCopilotChat",
