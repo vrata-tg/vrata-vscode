@@ -3,7 +3,7 @@ import { AccountSnapshot } from "./gateway";
 import { rubles } from "./account";
 import {
   ReasoningLevel,
-  REASONING_LEVELS,
+  REASONING_CHOICES,
   normalizeReasoning,
 } from "./reasoning";
 
@@ -113,12 +113,13 @@ export class VrataPanel implements vscode.Disposable {
     };
     const model: TreeItem = {
       label: `Модель: ${this.modelId ?? "по умолчанию чата"}`,
-      tooltip: "Модель выбирается в списке моделей чата; здесь — preferred.",
+      tooltip:
+        "Модель агента @vrata: применяется к его следующему запросу. Меняется кнопкой «Выбрать модель».",
       contextValue: "model",
     };
     const reasoning: TreeItem = {
       label: `Reasoning: ${this.reasoning ?? "по умолчанию сервера"}`,
-      tooltip: "Передаётся как reasoning_effort в payload запроса.",
+      tooltip: "Передаётся как reasoning_effort в payload каждого запроса.",
       contextValue: "reasoning",
     };
     const items = [connection, model, reasoning];
@@ -217,7 +218,6 @@ export class VrataPanel implements vscode.Disposable {
     if (state !== "not_connected")
       add("Обновить", "vrata.refreshBalance", "refresh");
     add("Открыть агента Врата в чате", "vrata.openAgentChat", "sparkle");
-    add("Открыть Copilot Chat", "vrata.openCopilotChat", "comment-discussion");
     add("Открыть бота", "vrata.getApiKey", "globe");
     return actions;
   }
@@ -247,7 +247,11 @@ export async function pickModel(
     title: "Врата AI: предпочитаемая модель",
     placeHolder: "Модель из списка моделей чата",
   });
-  if (choice) await panel.setModel(choice.label);
+  if (!choice) return;
+  await panel.setModel(choice.label);
+  await vscode.window.showInformationMessage(
+    `Модель Врат AI: ${choice.label}. Агент @vrata будет использовать её в следующем запросе.`,
+  );
 }
 
 export async function pickReasoning(panel: VrataPanel): Promise<void> {
@@ -259,15 +263,20 @@ export async function pickReasoning(panel: VrataPanel): Promise<void> {
         description: "не отправлять reasoning_effort",
         value: null as ReasoningLevel | null,
       },
-      ...REASONING_LEVELS.map((level) => ({
-        label: level,
-        description: "reasoning_effort: " + level,
-        value: level,
+      ...REASONING_CHOICES.map((item) => ({
+        label: item.label,
+        description: item.description,
+        value: item.value as ReasoningLevel | null,
       })),
     ],
     {
       title: "Врата AI: reasoning level",
-      placeHolder: "Текущий: " + (current ?? "по умолчанию сервера"),
+      placeHolder:
+        "Текущий: " +
+        (current
+          ? (REASONING_CHOICES.find((item) => item.value === current)?.label ??
+            current)
+          : "по умолчанию сервера"),
     },
   );
   if (choice) await panel.setReasoning(choice.value ?? undefined);
@@ -285,7 +294,7 @@ export async function openCopilotChat(): Promise<boolean> {
   return true;
 }
 
-/** Opens the built-in chat view focused on the Врата agent. */
+/** Opens the built-in chat view. The agent must be picked manually. */
 export async function openAgentChat(): Promise<boolean> {
   let failure: unknown;
   for (const command of [
@@ -293,7 +302,7 @@ export async function openAgentChat(): Promise<boolean> {
     "workbench.panel.chat.view.copilot",
   ]) {
     try {
-      await vscode.commands.executeCommand(command, { query: "@vrata " });
+      await vscode.commands.executeCommand(command);
       return true;
     } catch (error) {
       failure = error;
@@ -343,7 +352,7 @@ async function openAgentChatCommand(panel: VrataPanel): Promise<void> {
   }
   panel.report(
     new Error(
-      "Встроенный чат недоступен в этой версии редактора. Откройте панель чата вручную и упомяните агента @vrata.",
+      "Встроенный чат недоступен в этой версии редактора. Откройте панель чата вручную и выберите агента @vrata в меню участников.",
     ),
   );
 }
