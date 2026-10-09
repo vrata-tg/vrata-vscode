@@ -31,11 +31,21 @@ test("native commands, masked input, silent discovery and secret events", async 
     provider,
     secretListener;
   let copied;
+  let copilotInstalled = false;
+  const treeProviders = [];
+  const quickPicks = [];
+  let quickPick = null;
+  const globalValues = new Map([["welcomeShown", true]]);
   const disposable = { dispose() {} };
   const context = {
     extension: { packageJSON: { version: "0.1.6" } },
     subscriptions: [],
-    globalState: { get: () => true },
+    globalState: {
+      get: (key) => globalValues.get(key),
+      update: async (key, value) => {
+        globalValues.set(key, value);
+      },
+    },
     secrets: {
       get: async (key) => {
         if (readFailure) throw readFailure;
@@ -128,9 +138,17 @@ test("native commands, masked input, silent discovery and secret events", async 
           statusShown = true;
         },
       }),
-      showQuickPick: async () => {
+      registerTreeDataProvider: (viewId, treeProvider) => {
+        assert.equal(viewId, "vrata.panel");
+        treeProviders.push(treeProvider);
+        return disposable;
+      },
+      showQuickPick: async (items) => {
         manageCount++;
-        return undefined;
+        const picked =
+          typeof quickPick === "function" ? quickPick(items) : undefined;
+        quickPicks.push(picked);
+        return picked;
       },
       showInputBox: async (options) => {
         inputCount++;
@@ -165,6 +183,12 @@ test("native commands, masked input, silent discovery and secret events", async 
         executed.push([id, ...args]);
         if (id === "setContext" && contextFailure) throw contextFailure;
         return commands.get(id)?.(...args);
+      },
+    },
+    extensions: {
+      getExtension: (id) => {
+        executed.push(["extensions.getExtension", id]);
+        return copilotInstalled ? { id } : undefined;
       },
     },
     lm: {

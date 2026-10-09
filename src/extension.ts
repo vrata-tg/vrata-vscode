@@ -19,6 +19,8 @@ import {
   CredentialError,
   GatewayClient,
 } from "./gateway";
+import { VrataPanel, registerPanelCommands } from "./panel";
+import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
 
 function text(parts: readonly unknown[]): string {
   return parts
@@ -124,6 +126,8 @@ async function activateWithOutput(
           void credentials.loadAccount().catch((error) => logError(error, key));
         }
       }
+      panel.refresh();
+      panel.maybeAutoRefresh();
     },
   );
   function logError(error: unknown, ...keys: (string | undefined)[]): void {
@@ -330,6 +334,17 @@ async function activateWithOutput(
   command("vrata.getApiKey", () =>
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
   );
+  const panel = new VrataPanel(context, credentials, (error) =>
+    logError(error),
+  );
+  context.subscriptions.push(
+    panel,
+    ...registerPanelCommands(
+      panel,
+      () => projectCatalog(credentials.catalog).models,
+    ),
+    vscode.window.registerTreeDataProvider("vrata.panel", panel),
+  );
   command("vrata.openWalkthrough", () =>
     vscode.commands.executeCommand(
       "workbench.action.openWalkthrough",
@@ -360,6 +375,8 @@ async function activateWithOutput(
             : "Вставить API-ключ",
           command: "vrata.setApiKey",
         },
+        { label: "Выбрать модель", command: "vrata.selectModel" },
+        { label: "Выбрать reasoning level", command: "vrata.selectReasoning" },
         { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
         ...(credentials.connected
           ? [
@@ -406,6 +423,14 @@ async function activateWithOutput(
   }
   updateStatus();
   status.show();
+
+  void vscode.commands
+    .executeCommand(
+      "setContext",
+      "vrata.copilotChatAvailable",
+      vscode.extensions.getExtension("GitHub.copilot-chat") !== undefined,
+    )
+    .then(undefined, (error: unknown) => logError(error));
 
   context.subscriptions.push(
     vscode.lm.registerLanguageModelChatProvider("vrata", {
@@ -504,6 +529,9 @@ async function activateWithOutput(
                       model: model.id,
                       messages: toMessages(messages),
                       max_tokens: model.maxOutputTokens,
+                      ...chatCompletionsReasoning(
+                        resolveReasoning(options, panel.reasoning),
+                      ),
                       ...(options.tools?.length
                         ? {
                             tools: options.tools.map((tool) => ({
