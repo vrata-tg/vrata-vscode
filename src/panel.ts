@@ -61,6 +61,15 @@ export class VrataPanel implements vscode.Disposable {
     this.tree.fire();
   }
 
+  /** Surface panel-level failures through the editor's notification UI. */
+  report(error: unknown): void {
+    void Promise.resolve(
+      vscode.window.showErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      ),
+    ).then(undefined, this.logError);
+  }
+
   async refreshBalance(): Promise<void> {
     if (!this.credentials.connected || this.refreshing) return;
     this.refreshing = true;
@@ -151,10 +160,25 @@ export class VrataPanel implements vscode.Disposable {
   private balanceAge(account: AccountSnapshot): string | undefined {
     const checked = Date.parse(account.checked_at);
     if (!Number.isFinite(checked)) return undefined;
-    const minutes = Math.max(0, Math.round((Date.now() - checked) / 60_000));
-    return minutes >= 60
-      ? `${Math.floor(minutes / 60)} ч ${minutes % 60} мин назад`
-      : `${minutes} мин назад`;
+    // Server timestamp, shown in the device's time zone, minute precision.
+    const when = new Date(checked);
+    const hhmm = when.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const today = new Date();
+    const sameDay =
+      when.getFullYear() === today.getFullYear() &&
+      when.getMonth() === today.getMonth() &&
+      when.getDate() === today.getDate();
+    const date = sameDay
+      ? "сегодня"
+      : when.toLocaleDateString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+        });
+    const minutes = Math.max(0, Math.floor((Date.now() - checked) / 60_000));
+    return `${date} ${hhmm} (${minutes} мин назад)`;
   }
 
   private stateLabel(state: string): string {
@@ -188,8 +212,11 @@ export class VrataPanel implements vscode.Disposable {
       });
     };
     add("Подключить / заменить ключ", "vrata.setApiKey", "key");
+    add("Выбрать модель", "vrata.selectModel", "symbol-class");
+    add("Выбрать reasoning level", "vrata.selectReasoning", "layers");
     if (state !== "not_connected")
       add("Обновить", "vrata.refreshBalance", "refresh");
+    add("Открыть агента Врата в чате", "vrata.openAgentChat", "sparkle");
     add("Открыть Copilot Chat", "vrata.openCopilotChat", "comment-discussion");
     add("Открыть бота", "vrata.getApiKey", "globe");
     return actions;
@@ -258,6 +285,24 @@ export async function openCopilotChat(): Promise<boolean> {
   return true;
 }
 
+/** Opens the built-in chat view focused on the Врата agent. */
+export async function openAgentChat(): Promise<boolean> {
+  let failure: unknown;
+  for (const command of [
+    "workbench.action.chat.open",
+    "workbench.panel.chat.view.copilot",
+  ]) {
+    try {
+      await vscode.commands.executeCommand(command, { query: "@vrata " });
+      return true;
+    } catch (error) {
+      failure = error;
+    }
+  }
+  if (failure) throw failure;
+  return false;
+}
+
 export function registerPanelCommands(
   panel: VrataPanel,
   catalog: () => readonly { id: string }[],
@@ -282,5 +327,23 @@ export function registerPanelCommands(
           ),
         );
     }),
+    vscode.commands.registerCommand("vrata.openAgentChat", () =>
+      openAgentChatCommand(panel),
+    ),
   ];
+}
+
+async function openAgentChatCommand(panel: VrataPanel): Promise<void> {
+  try {
+    if (await openAgentChat()) return;
+  } catch (error) {
+    // A missing built-in chat command is expected on older editors.
+    panel.report(error);
+    return;
+  }
+  panel.report(
+    new Error(
+      "Встроенный чат недоступен в этой версии редактора. Откройте панель чата вручную и упомяните агента @vrata.",
+    ),
+  );
 }
