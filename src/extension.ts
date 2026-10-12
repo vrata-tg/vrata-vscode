@@ -21,7 +21,16 @@ import {
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
 
-const MODEL_PICKER_CATEGORY = { label: "Врата AI", order: 0 };
+const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
+
+function modelPickerCategory(): string | { label: string; order: number } {
+  // VS Code 1.126 changed the provider metadata shape from an ordered object
+  // to a plain string. Keep the old shape for the minimum supported editor.
+  const minor = Number(vscode.version.split(".")[1] ?? 0);
+  return minor >= 126
+    ? MODEL_PICKER_CATEGORY_LABEL
+    : { label: MODEL_PICKER_CATEGORY_LABEL, order: 0 };
+}
 
 function text(parts: readonly unknown[]): string {
   return parts
@@ -347,7 +356,7 @@ async function activateWithOutput(
       .inspect<string>("byokUtilityModelDefault");
     if (setting?.defaultValue === undefined) {
       return vscode.window.showInformationMessage(
-        "Настройка служебной модели недоступна в этой версии VS Code. Для неё обновите редактор. Подключением Врат AI можно управлять через строку состояния.",
+        "Настройка фоновой модели недоступна в этой версии VS Code. Обновите редактор, чтобы выбрать модель Врат AI для названий чатов и других служебных запросов.",
       );
     }
     return vscode.commands.executeCommand(
@@ -435,7 +444,7 @@ async function activateWithOutput(
           // VS Code 1.104 reads this metadata field when grouping provider
           // models. Keeping it on the returned object moves Vrata out of the
           // generic "Other Models" bucket without replacing the native chat.
-          category: MODEL_PICKER_CATEGORY,
+          category: modelPickerCategory(),
           ...(credentials.catalogStale
             ? {
                 detail: "Каталог устарел",

@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -135,8 +135,8 @@
           },
           {
             "id": "utility",
-            "title": "Настройте служебную модель",
-            "description": "Нажмите кнопку ниже и выберите `Main Agent Model`.\n[Настроить служебную модель](command:vrata.utilitySettings)",
+            "title": "Для чего нужна служебная модель",
+            "description": "VS Code иногда отправляет фоновые запросы: например, для названия чата и других вспомогательных действий. Они тоже используют модель и могут расходовать баланс Врат AI. Нажмите кнопку ниже и выберите `Main Agent Model` — это значит «использовать выбранную модель основного агента Врата AI», а не отдельный чат или новый ключ.\n[Настроить служебную модель](command:vrata.utilitySettings)",
             "media": {
               "markdown": "media/utility.md"
             }

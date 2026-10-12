@@ -286,6 +286,14 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     ],
     "Vrata models use the chat picker category instead of Other Models",
   );
+  // VS Code 1.126+ changed the provider metadata category from an object to
+  // a string. The provider must match the editor that is actually running.
+  vscode.version = "1.138.0";
+  const currentModels = await provider.provideLanguageModelChatInformation(
+    { silent: true },
+    {},
+  );
+  assert.equal(currentModels[0].category, "Врата AI");
   assert.ok(!models.some((model) => /авто/i.test(model.name)));
   const parts = [];
   await provider.provideLanguageModelChatResponse(
