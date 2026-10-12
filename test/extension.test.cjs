@@ -31,7 +31,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     provider,
     secretListener;
   let copied;
-  let copilotInstalled = false;
+
   const treeProviders = [];
   const quickPicks = [];
   let quickPick = null;
@@ -185,12 +185,7 @@ test("native commands, masked input, silent discovery and secret events", async 
         return commands.get(id)?.(...args);
       },
     },
-    extensions: {
-      getExtension: (id) => {
-        executed.push(["extensions.getExtension", id]);
-        return copilotInstalled ? { id } : undefined;
-      },
-    },
+
     lm: {
       registerLanguageModelChatProvider: (vendor, value) => {
         assert.equal(vendor, "vrata");
@@ -392,6 +387,10 @@ test("native commands, masked input, silent discovery and secret events", async 
     discovered.map((models) => models.map((model) => model.id)),
     [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
   );
+  assert.deepEqual(discovered[0][0].category, {
+    label: "Врата AI",
+    order: 0,
+  });
   assert.equal(discovered[0][0].maxInputTokens, 120000);
   assert.equal(discovered[0][0].capabilities.imageInput, false);
   assert.equal(

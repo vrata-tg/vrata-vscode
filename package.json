@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -86,11 +86,6 @@
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "vrata.openCopilotChat",
-        "title": "Открыть Copilot Chat",
-        "category": "Врата AI"
-      },
-      {
         "command": "vrata.copyDiagnostics",
         "title": "Скопировать диагностику",
         "category": "Врата AI"
@@ -145,17 +140,6 @@
             "media": {
               "markdown": "media/utility.md"
             }
-          },
-          {
-            "id": "copilot",
-            "title": "Откройте GitHub Copilot Chat (необязательно)",
-            "description": "Если установлен GitHub Copilot Chat, его чат тоже видит модели Врат AI. Расширение работает и без Copilot: штатный агент чата работает с моделями Врат AI напрямую.\n[Открыть Copilot Chat](command:vrata.openCopilotChat)",
-            "media": {
-              "markdown": "media/copilot.md"
-            },
-            "completionEvents": [
-              "onContext:vrata.copilotChatAvailable"
-            ]
           }
         ]
       }

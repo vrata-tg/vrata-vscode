@@ -21,6 +21,8 @@ import {
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
 
+const MODEL_PICKER_CATEGORY = { label: "Врата AI", order: 0 };
+
 function text(parts: readonly unknown[]): string {
   return parts
     .map((part) => {
@@ -408,14 +410,6 @@ async function activateWithOutput(
   updateStatus();
   status.show();
 
-  void vscode.commands
-    .executeCommand(
-      "setContext",
-      "vrata.copilotChatAvailable",
-      vscode.extensions.getExtension("GitHub.copilot-chat") !== undefined,
-    )
-    .then(undefined, (error: unknown) => logError(error));
-
   context.subscriptions.push(
     vscode.lm.registerLanguageModelChatProvider("vrata", {
       onDidChangeLanguageModelChatInformation: changes.event,
@@ -436,18 +430,20 @@ async function activateWithOutput(
         }
         if (token.isCancellationRequested) return [];
         const { models } = projectCatalog(credentials.catalog);
-        const routed: vscode.LanguageModelChatInformation[] = models.map(
-          (model) =>
-            credentials.catalogStale
-              ? {
-                  ...model,
-                  detail: "Каталог устарел",
-                  tooltip:
-                    "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
-                }
-              : model,
-        );
-        return routed;
+        return models.map((model) => ({
+          ...model,
+          // VS Code 1.104 reads this metadata field when grouping provider
+          // models. Keeping it on the returned object moves Vrata out of the
+          // generic "Other Models" bucket without replacing the native chat.
+          category: MODEL_PICKER_CATEGORY,
+          ...(credentials.catalogStale
+            ? {
+                detail: "Каталог устарел",
+                tooltip:
+                  "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
+              }
+            : {}),
+        }));
       },
       async provideTokenCount(_model, input) {
         try {

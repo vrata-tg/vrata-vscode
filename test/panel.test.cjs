@@ -2,8 +2,8 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
 
-// Panel behaviors: view registration, model/reasoning persistence, reasoning
-// effort reaching the chat_completions payload, and the Copilot fallback.
+// Panel behaviors: view registration, model/reasoning persistence and reasoning
+// effort reaching the chat_completions payload.
 test("activity bar view, saved settings and reasoning payload", async (t) => {
   const commands = new Map();
   const executed = [];
@@ -13,7 +13,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   const values = new Map();
   const globalValues = new Map([["welcomeShown", true]]);
   const treeProviders = [];
-  let copilotInstalled = false;
+
   const quickPickQueue = [];
   const context = {
     extension: { packageJSON: { version: "0.1.7" } },
@@ -116,9 +116,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
         executed.push([id, ...args]);
       },
     },
-    extensions: {
-      getExtension: (id) => (copilotInstalled ? { id } : undefined),
-    },
+
     lm: {
       registerLanguageModelChatProvider: (vendor, value) => {
         assert.equal(vendor, "vrata");
@@ -280,6 +278,14 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     models.map((model) => model.id),
     ["glm-5.3-flash", "claude-haiku-4-5"],
   );
+  assert.deepEqual(
+    models.map((model) => model.category),
+    [
+      { label: "Врата AI", order: 0 },
+      { label: "Врата AI", order: 0 },
+    ],
+    "Vrata models use the chat picker category instead of Other Models",
+  );
   assert.ok(!models.some((model) => /авто/i.test(model.name)));
   const parts = [];
   await provider.provideLanguageModelChatResponse(
@@ -353,21 +359,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     ["glm-5.3-flash", "claude-haiku-4-5"],
   );
 
-  // 6. Without Copilot the command falls back to the Marketplace offer.
-  const answer = await commands.get("vrata.openCopilotChat")();
-  assert.equal(answer, undefined);
-  assert.ok(
-    notices.some((message) => message.includes("Copilot Chat не установлено")),
-    JSON.stringify(notices),
-  );
-  copilotInstalled = true;
-  await commands.get("vrata.openCopilotChat")();
-  assert.ok(
-    executed.some(([id]) => id === "workbench.action.chat.open"),
-    "available Copilot Chat opens the chat view",
-  );
-
-  // 7. Restoring settings: a fresh panel reads the same globalState values
+  // 6. Restoring settings: a fresh panel reads the same globalState values
   //    (the panel model is glm-5.3-flash since step 5b).
   const restored = await treeProvider.getChildren();
   assert.ok(
@@ -377,10 +369,10 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   assert.ok(!restored.some((item) => /Обновить/.test(item.label)));
 
-  // 8. The account row shows the server update time, device timezone, minute precision.
+  // 7. The account row shows the server update time, device timezone, minute precision.
   assert.ok(!restored.some((item) => item.label.startsWith("Данные от:")));
 
-  // 9. Every provider request is logged with model, transport and effort —
+  // 8. Every provider request is logged with model, transport and effort —
   //    the observable trace for standard-agent chat requests.
   await provider.provideLanguageModelChatResponse(
     models[0],
@@ -393,7 +385,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     },
   );
 
-  // 10. Full reasoning set: none, xhigh and max persist and ride the payload.
+  // 9. Full reasoning set: none, xhigh and max persist and ride the payload.
   for (const [label, effort] of [
     ["None", "none"],
     ["Extra High", "xhigh"],
@@ -434,7 +426,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), undefined);
 
-  // 11. Picking a model stays silent: the panel row already shows the choice.
+  // 10. Picking a model stays silent: the panel row already shows the choice.
   notices.length = 0;
   quickPickQueue.push((pickerItems) =>
     pickerItems.find((item) => item.label === "glm-5.3-flash"),
@@ -443,7 +435,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   assert.equal(globalValues.get("vrata.panelModel"), "glm-5.3-flash");
   assert.equal(notices.length, 0, "model choice shows no notification");
 
-  // 12. The open-chat action opens the built-in chat and never types into
+  // 11. The open-chat action opens the built-in chat and never types into
   //     the input (no query payload to workbench.action.chat.open).
   executed.length = 0;
   await commands.get("vrata.openChat")();

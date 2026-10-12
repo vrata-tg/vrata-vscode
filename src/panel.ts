@@ -218,18 +218,6 @@ export async function pickReasoning(panel: VrataPanel): Promise<void> {
   if (choice) await panel.setReasoning(choice.value ?? undefined);
 }
 
-const COPILOT_CHAT_EXTENSION = "GitHub.copilot-chat";
-
-export async function copilotChatAvailable(): Promise<boolean> {
-  return vscode.extensions.getExtension(COPILOT_CHAT_EXTENSION) !== undefined;
-}
-
-export async function openCopilotChat(): Promise<boolean> {
-  if (!(await copilotChatAvailable())) return false;
-  await vscode.commands.executeCommand("workbench.action.chat.open");
-  return true;
-}
-
 /** Opens the editor's built-in chat view. Never types into the input. */
 export async function openChat(): Promise<void> {
   let failure: unknown;
@@ -266,19 +254,6 @@ export function registerPanelCommands(
         // A missing built-in chat command is expected on older editors.
         panel.report(error);
       }
-    }),
-    vscode.commands.registerCommand("vrata.openCopilotChat", async () => {
-      if (await openCopilotChat()) return;
-      const install = await vscode.window.showInformationMessage(
-        "Расширение GitHub Copilot Chat не установлено или недоступно. Откроем его страницу на Marketplace?",
-        "Открыть Marketplace",
-      );
-      if (install === "Открыть Marketplace")
-        await vscode.env.openExternal(
-          vscode.Uri.parse(
-            "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat",
-          ),
-        );
     }),
   ];
 }
