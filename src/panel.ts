@@ -18,7 +18,6 @@ export class VrataPanel implements vscode.Disposable {
   private readonly tree: vscode.EventEmitter<void | TreeItem | null[]> =
     new vscode.EventEmitter();
   readonly onDidChangeTreeData = this.tree.event;
-  private refreshing = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -76,26 +75,6 @@ export class VrataPanel implements vscode.Disposable {
     ).then(undefined, this.logError);
   }
 
-  async refreshBalance(): Promise<void> {
-    if (!this.credentials.connected || this.refreshing) return;
-    this.refreshing = true;
-    this.refresh();
-    try {
-      await this.credentials.loadAccount();
-    } catch (error) {
-      this.logError(error);
-    } finally {
-      this.refreshing = false;
-      this.refresh();
-    }
-  }
-
-  /** TTL auto-refresh keeps the balance live without a polling loop. */
-  maybeAutoRefresh(): void {
-    if (!this.credentials.connected || this.credentials.account) return;
-    void this.refreshBalance();
-  }
-
   private state(): string {
     const c = this.credentials;
     if (!c.connected) return "not_connected";
@@ -117,22 +96,9 @@ export class VrataPanel implements vscode.Disposable {
       iconPath: this.stateIcon(state),
       contextValue: "connection",
     };
-    const model: TreeItem = {
-      label: `Модель: ${this.modelId ?? "по умолчанию чата"}`,
-      tooltip:
-        "Preferred-модель Врат AI: подставляется агентом @vrata в каждый запрос и видна в меню моделей чата (провайдер «Врата AI»). Фактические модель и reasoning каждого запроса — в журнале Output → Врата AI.",
-      contextValue: "model",
-    };
-    const reasoning: TreeItem = {
-      label: `Reasoning: ${this.reasoning ?? "по умолчанию сервера"}`,
-      tooltip:
-        "Передаётся как reasoning_effort в payload каждого запроса моделей Врат AI. Проверить: Output → Врата AI.",
-      contextValue: "reasoning",
-    };
-    const items = [connection, model, reasoning];
+    const items = [connection];
     const account = c.account;
     if (account) {
-      const age = this.balanceAge(account);
       const suffix = c.accountStale ? " (устарело)" : "";
       items.push({
         label: `Баланс: ${rubles(account.balance.spendable)}${suffix}`,
@@ -148,12 +114,6 @@ export class VrataPanel implements vscode.Disposable {
         iconPath: new vscode.ThemeIcon("mirror"),
         contextValue: "quota",
       });
-      if (age !== undefined)
-        items.push({
-          label: `Данные от: ${age}`,
-          iconPath: new vscode.ThemeIcon("clock"),
-          contextValue: "checked",
-        });
     } else if (state === "not_connected") {
       items.push({
         label: "Вставьте API-ключ, чтобы видеть баланс",
@@ -161,32 +121,8 @@ export class VrataPanel implements vscode.Disposable {
         contextValue: "hint",
       });
     }
-    for (const action of this.actions(state)) items.push(action);
+    for (const action of this.actions()) items.push(action);
     return items;
-  }
-
-  private balanceAge(account: AccountSnapshot): string | undefined {
-    const checked = Date.parse(account.checked_at);
-    if (!Number.isFinite(checked)) return undefined;
-    // Server timestamp, shown in the device's time zone, minute precision.
-    const when = new Date(checked);
-    const hhmm = when.toLocaleTimeString("ru-RU", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    const today = new Date();
-    const sameDay =
-      when.getFullYear() === today.getFullYear() &&
-      when.getMonth() === today.getMonth() &&
-      when.getDate() === today.getDate();
-    const date = sameDay
-      ? "сегодня"
-      : when.toLocaleDateString("ru-RU", {
-          day: "2-digit",
-          month: "2-digit",
-        });
-    const minutes = Math.max(0, Math.floor((Date.now() - checked) / 60_000));
-    return `${date} ${hhmm} (${minutes} мин назад)`;
   }
 
   private stateLabel(state: string): string {
@@ -209,7 +145,7 @@ export class VrataPanel implements vscode.Disposable {
     }[state]!;
   }
 
-  private actions(state: string): TreeItem[] {
+  private actions(): TreeItem[] {
     const actions: TreeItem[] = [];
     const add = (label: string, command: string, icon: string): void => {
       actions.push({
@@ -221,10 +157,6 @@ export class VrataPanel implements vscode.Disposable {
     };
     add("Подключить / заменить ключ", "vrata.setApiKey", "key");
     add("Открыть чат", "vrata.openChat", "comment-discussion");
-    add("Выбрать модель", "vrata.selectModel", "symbol-class");
-    add("Выбрать reasoning level", "vrata.selectReasoning", "layers");
-    if (state !== "not_connected")
-      add("Обновить", "vrata.refreshBalance", "refresh");
     add("Открыть бота", "vrata.getApiKey", "globe");
     return actions;
   }

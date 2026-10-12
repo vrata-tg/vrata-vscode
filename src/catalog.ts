@@ -6,21 +6,6 @@ export interface CatalogProjection {
   transports: Record<string, "chat_completions" | "messages">;
 }
 
-/**
- * The stable chat entry that the extension routes to the panel's chosen
- * model. Never a real gateway model id; the gateway never sees it.
- */
-export const ROUTED_MODEL_ID = "vrata-auto";
-
-export const ROUTED_MODEL_NAME = "Врата AI (авто)";
-
-/** First confirmed catalog model, used when the panel has no choice. */
-export function fallbackModelId(
-  catalog: readonly unknown[],
-): string | undefined {
-  return projectCatalog(catalog).models[0]?.id;
-}
-
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

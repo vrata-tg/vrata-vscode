@@ -254,7 +254,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     "no custom chat-participant action: the standard chat agent is used",
   );
 
-  // 3. Model choice persists in globalState and shows in the panel — silently.
+  // 3. Legacy model preference remains persisted but is absent from the panel.
   notices.length = 0;
   quickPickQueue.push((items) =>
     items.find((item) => item.label === "claude-haiku-4-5"),
@@ -263,10 +263,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   assert.equal(globalValues.get("vrata.panelModel"), "claude-haiku-4-5");
   assert.equal(notices.length, 0, "model choice shows no notification");
   items = await treeProvider.getChildren();
-  assert.ok(
-    items.some((item) => item.label === "Модель: claude-haiku-4-5"),
-    JSON.stringify(items.map((item) => item.label)),
-  );
+  assert.ok(!items.some((item) => item.label.startsWith("Модель:")));
 
   // 4. Reasoning level persists and reaches the chat_completions payload.
   //    The picker offers the full gateway set plus the server default.
@@ -274,23 +271,16 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), "high");
   items = await treeProvider.getChildren();
-  assert.ok(
-    items.some((item) => item.label === "Reasoning: high"),
-    JSON.stringify(items.map((item) => item.label)),
-  );
+  assert.ok(!items.some((item) => item.label.startsWith("Reasoning:")));
   const models = await provider.provideLanguageModelChatInformation(
     { silent: true },
     {},
   );
   assert.deepEqual(
     models.map((model) => model.id),
-    ["glm-5.3-flash", "claude-haiku-4-5", "vrata-auto"],
+    ["glm-5.3-flash", "claude-haiku-4-5"],
   );
-  // The routed entry advertises the panel's current target and reasoning.
-  const routedEntry = models.find((model) => model.id === "vrata-auto");
-  assert.ok(routedEntry, "the stable routed entry is exposed to the chat");
-  assert.match(routedEntry.detail, /→ claude-haiku-4-5/);
-  assert.match(routedEntry.detail, /reasoning high/);
+  assert.ok(!models.some((model) => /авто/i.test(model.name)));
   const parts = [];
   await provider.provideLanguageModelChatResponse(
     models[0],
@@ -326,10 +316,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   assert.equal(overrideBody.reasoning_effort, "low");
 
-  // 5a. The routed chat entry sends the PANEL's model to the gateway,
-  //     never the synthetic vrata-auto id, and keeps the stored reasoning.
+  // 5a. The real catalog model is sent directly to the gateway.
   await provider.provideLanguageModelChatResponse(
-    routedEntry,
+    models[1],
     [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
     {},
     { report: (part) => parts.push(part) },
@@ -345,7 +334,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   assert.equal(
     routedBody.model,
     "claude-haiku-4-5",
-    "routed entry sends the panel's chosen model",
+    "selected catalog model is used directly",
   );
   assert.equal(routedBody.reasoning_effort, "high");
 
@@ -359,10 +348,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     { silent: true },
     {},
   );
-  assert.match(
-    refreshed.find((model) => model.id === "vrata-auto").detail,
-    /→ glm-5\.3-flash/,
-    "routed entry follows the panel choice",
+  assert.deepEqual(
+    refreshed.map((model) => model.id),
+    ["glm-5.3-flash", "claude-haiku-4-5"],
   );
 
   // 6. Without Copilot the command falls back to the Marketplace offer.
@@ -382,19 +370,15 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   // 7. Restoring settings: a fresh panel reads the same globalState values
   //    (the panel model is glm-5.3-flash since step 5b).
   const restored = await treeProvider.getChildren();
-  assert.ok(restored.some((item) => item.label === "Модель: glm-5.3-flash"));
-  assert.ok(restored.some((item) => item.label === "Reasoning: high"));
+  assert.ok(
+    !restored.some((item) =>
+      /^(Модель:|Reasoning:|Данные от:|Обновить$)/.test(item.label),
+    ),
+  );
+  assert.ok(!restored.some((item) => /Обновить/.test(item.label)));
 
   // 8. The account row shows the server update time, device timezone, minute precision.
-  const checkedRow = restored.find((item) =>
-    item.label.startsWith("Данные от"),
-  );
-  assert.ok(checkedRow, "panel shows the checked-at row");
-  assert.match(
-    checkedRow.label,
-    /Данные от: (сегодня|\d{2}\.\d{2}) \d{2}:\d{2} \(\d+ мин назад\)/,
-    checkedRow.label,
-  );
+  assert.ok(!restored.some((item) => item.label.startsWith("Данные от:")));
 
   // 9. Every provider request is logged with model, transport and effort —
   //    the observable trace for standard-agent chat requests.

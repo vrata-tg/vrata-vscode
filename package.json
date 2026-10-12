@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -67,11 +67,6 @@
       {
         "command": "vrata.refreshModels",
         "title": "Обновить список моделей",
-        "category": "Врата AI"
-      },
-      {
-        "command": "vrata.refreshBalance",
-        "title": "Обновить баланс",
         "category": "Врата AI"
       },
       {

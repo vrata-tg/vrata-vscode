@@ -390,10 +390,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   ]);
   assert.deepEqual(
     discovered.map((models) => models.map((model) => model.id)),
-    [
-      ["gpt-5.6-terra", "vrata-auto"],
-      ["gpt-5.6-terra", "vrata-auto"],
-    ],
+    [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
   );
   assert.equal(discovered[0][0].maxInputTokens, 120000);
   assert.equal(discovered[0][0].capabilities.imageInput, false);
@@ -523,7 +520,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     (
       await provider.provideLanguageModelChatInformation({ silent: true }, {})
     ).map((model) => model.id),
-    ["gpt-5.6-terra", "vrata-auto"],
+    ["gpt-5.6-terra"],
   );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;
@@ -531,6 +528,9 @@ test("native commands, masked input, silent discovery and secret events", async 
   fetchFailure = new Error(`stream failed ${input}`, {
     cause: new Error("stream socket cause"),
   });
+  const accountCallsBeforeFailure = requests.filter((request) =>
+    request.url.endsWith("/v1/account"),
+  ).length;
   const token = {
     isCancellationRequested: false,
     onCancellationRequested: () => disposable,
@@ -553,6 +553,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     "gpt-5.6-terra",
   );
   assertLogged(/network/);
+  assert.equal(
+    requests.filter((request) => request.url.endsWith("/v1/account")).length,
+    accountCallsBeforeFailure + 1,
+    "failed requests refresh the account before returning",
+  );
   fetchFailure = undefined;
   directMessages = true;
   await commands.get("vrata.refreshModels")();

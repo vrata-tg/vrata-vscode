@@ -2,12 +2,7 @@ import * as vscode from "vscode";
 import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
-import {
-  fallbackModelId,
-  projectCatalog,
-  ROUTED_MODEL_ID,
-  ROUTED_MODEL_NAME,
-} from "./catalog";
+import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
 import { accountTooltip, rubles } from "./account";
 import { requestError } from "./request-errors";
@@ -17,7 +12,6 @@ import {
   SECRET_KEY,
 } from "./credentials";
 import {
-  AccountError,
   API_ORIGIN,
   STAGING_API_ORIGIN,
   BOT_URL,
@@ -132,7 +126,6 @@ async function activateWithOutput(
         }
       }
       panel.refresh();
-      panel.maybeAutoRefresh();
     },
   );
   function logError(error: unknown, ...keys: (string | undefined)[]): void {
@@ -191,7 +184,7 @@ async function activateWithOutput(
         ? "Ключ недействителен. Замените его."
         : undefined,
       credentials.accountUnavailable && !credentials.accountInvalid
-        ? "Не удалось получить баланс. Обновите его вручную."
+        ? "Не удалось получить баланс. Он обновится после следующего запроса."
         : undefined,
       credentials.catalogUnavailable
         ? "Каталог Врат AI недоступен. Обновите список моделей."
@@ -309,19 +302,7 @@ async function activateWithOutput(
       }`,
     );
   });
-  command("vrata.refreshBalance", async (keys) => {
-    if (!credentials.connected) return;
-    try {
-      await credentials.loadAccount();
-    } catch (error) {
-      logError(error, ...keys);
-      await showError(
-        error instanceof AccountError && error.status === 401
-          ? "Ключ Врат AI недействителен. Замените его."
-          : "Не удалось обновить баланс Врат AI. Последнее значение помечено как устаревшее.",
-      );
-    }
-  });
+
   command("vrata.copyDiagnostics", async () => {
     await vscode.env.clipboard.writeText(
       diagnosticReport({
@@ -381,12 +362,9 @@ async function activateWithOutput(
             : "Вставить API-ключ",
           command: "vrata.setApiKey",
         },
-        { label: "Выбрать модель", command: "vrata.selectModel" },
-        { label: "Выбрать reasoning level", command: "vrata.selectReasoning" },
         { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
         ...(credentials.connected
           ? [
-              { label: "Обновить баланс", command: "vrata.refreshBalance" },
               {
                 label: "Обновить список моделей",
                 command: "vrata.refreshModels",
@@ -469,27 +447,6 @@ async function activateWithOutput(
                 }
               : model,
         );
-        // A single stable chat entry that always routes to the panel's
-        // chosen model with its reasoning level — pick it once in the chat.
-        const target = panel.modelId ?? "(по умолчанию чата)";
-        routed.push({
-          id: ROUTED_MODEL_ID,
-          name: ROUTED_MODEL_NAME,
-          family: "vrata",
-          version: ROUTED_MODEL_ID,
-          maxInputTokens: Math.max(
-            1,
-            ...routed.map((model) => model.maxInputTokens),
-          ),
-          maxOutputTokens: Math.max(
-            1,
-            ...routed.map((model) => model.maxOutputTokens),
-          ),
-          capabilities: { toolCalling: true, imageInput: false },
-          detail: `→ ${target}${panel.reasoning ? ` · reasoning ${panel.reasoning}` : ""}`,
-          tooltip:
-            "Маршрутизируется расширением на модель из панели «Врата AI» с её reasoning level. Смените модель или reasoning в панели — эта запись следует за выбором.",
-        });
         return routed;
       },
       async provideTokenCount(_model, input) {
@@ -522,17 +479,12 @@ async function activateWithOutput(
             signal = AbortSignal.any([controller.signal, session.signal]);
             try {
               const catalog = projectCatalog(credentials.catalog);
-              const targetId =
-                model.id === ROUTED_MODEL_ID
-                  ? (panel.modelId ??
-                    fallbackModelId(credentials.catalog) ??
-                    model.id)
-                  : model.id;
+              const targetId = model.id;
               const messagesTransport =
                 catalog.transports[targetId] === "messages";
               const effort = resolveReasoning(options, panel.reasoning);
               output.info(
-                `Запрос: модель ${targetId}${model.id === ROUTED_MODEL_ID ? " (маршрут Врата AI)" : ""}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
+                `Запрос: модель ${targetId}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
               const requestId = await (
                 messagesTransport ? streamMessages : streamChat
@@ -608,7 +560,7 @@ async function activateWithOutput(
             } finally {
               subscription.dispose();
               if (session.isCurrent())
-                void credentials
+                await credentials
                   .loadAccount()
                   .catch((error) => logError(error, session.key));
             }

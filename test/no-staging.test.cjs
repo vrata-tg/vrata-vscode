@@ -158,11 +158,12 @@ test("normal user scenario never contacts staging", async (t) => {
   assert.ok(treeProvider, "panel tree provider must be registered");
   const items = await treeProvider.getChildren();
   assert.ok(
-    items.some((item) => item.label.includes("Модель")),
-    "panel shows the model row",
+    !items.some((item) =>
+      /Модель|Reasoning|Обновить|Данные от/.test(item.label),
+    ),
   );
   await commands.get("vrata.refreshModels")();
-  await commands.get("vrata.refreshBalance")();
+
   assert.ok(
     requests.every((request) =>
       request.url.startsWith("https://api.vrata.tg/"),
