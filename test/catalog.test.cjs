@@ -50,6 +50,7 @@ test("only explicitly confirmed image support reaches the VS Code capability", (
   const result = projectCatalog([
     entry("vision", { supports_images: true }),
     entry("unknown", { supports_images: null }),
+    entry("gpt-6.1-sol", { supports_images: null }),
     entry("disabled", { supports_images: false }),
   ]);
   assert.deepEqual(
@@ -57,8 +58,14 @@ test("only explicitly confirmed image support reaches the VS Code capability", (
     [
       ["vision", true],
       ["unknown", false],
+      ["gpt-6.1-sol", true],
       ["disabled", false],
     ],
+  );
+  assert.equal(
+    projectCatalog([entry("gpt-6.1-sol", { supports_images: false })]).models[0]
+      .capabilities.imageInput,
+    false,
   );
 });
 

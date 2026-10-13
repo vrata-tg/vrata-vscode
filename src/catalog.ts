@@ -16,6 +16,11 @@ function limit(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+// The production catalog currently omits this flag for gpt-6.1-sol even though
+// the model accepts the image payload used by this provider. Keep the exception
+// explicit instead of inferring vision support from a model family.
+const KNOWN_VISION_MODELS = new Set(["gpt-6.1-sol"]);
+
 /** The server's max_input_tokens is an input cap, not a total context window. */
 export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
   const models: vscode.LanguageModelChatInformation[] = [];
@@ -73,7 +78,9 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
       maxOutputTokens: metadata.max_output_tokens as number,
       capabilities: {
         toolCalling: true,
-        imageInput: metadata.supports_images === true,
+        imageInput:
+          metadata.supports_images === true ||
+          (metadata.supports_images == null && KNOWN_VISION_MODELS.has(id)),
       },
     };
     if (transports[id])
