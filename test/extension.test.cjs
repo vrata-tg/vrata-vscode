@@ -13,6 +13,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   let holdStartupError = true;
   let statusShown = false;
   let statusHidden = 0;
+  let statusItem;
   const executed = [];
   let utilitySettingAvailable = false;
   const values = new Map();
@@ -94,6 +95,11 @@ test("native commands, masked input, silent discovery and secret events", async 
         Object.assign(this, { callId, content });
       }
     },
+    ThemeIcon: class {
+      constructor(id) {
+        this.id = id;
+      }
+    },
     workspace: {
       getConfiguration: () => ({
         inspect: () =>
@@ -134,15 +140,16 @@ test("native commands, masked input, silent discovery and secret events", async 
           show: () => logShown++,
         };
       },
-      createStatusBarItem: () => ({
-        ...disposable,
-        show() {
-          statusShown = true;
-        },
-        hide() {
-          statusHidden++;
-        },
-      }),
+      createStatusBarItem: () =>
+        (statusItem = {
+          ...disposable,
+          show() {
+            statusShown = true;
+          },
+          hide() {
+            statusHidden++;
+          },
+        }),
       registerTreeDataProvider: (viewId, treeProvider) => {
         assert.equal(viewId, "vrata.panel");
         treeProviders.push(treeProvider);
@@ -307,8 +314,8 @@ test("native commands, masked input, silent discovery and secret events", async 
     "activation must finish while the keyring error notification is open",
   );
   assert.ok(provider, "provider must be available before dismissing the error");
-  assert.equal(statusShown, true);
-  assert.equal(statusHidden, 0);
+  assert.equal(statusShown, false);
+  assert.ok(statusHidden > 0, "missing account hides the status item");
   assert.equal(logShown, 0);
   holdStartupError = false;
   dismissStartupError();
@@ -397,7 +404,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     "workbench.action.chat.open",
     "workbench.action.chat.openModelPicker",
   ]);
-  assert.ok(statusHidden > 0, "healthy connection hides the status item");
+  assert.equal(statusShown, true, "healthy connection shows the balance");
   await commands.get("vrata.debugStaging")();
   assert.equal(
     requests.filter((request) =>
@@ -583,6 +590,14 @@ test("native commands, masked input, silent discovery and secret events", async 
     accountCallsBeforeFailure + 1,
     "failed requests refresh the account before returning",
   );
+  assert.match(statusItem.text, /Врата AI: 0 ₽/);
+  assert.doesNotMatch(statusItem.text, /устарел/i);
+  const panelItems = await treeProviders[0].getChildren();
+  const balanceItem = panelItems.find(
+    (item) => item.contextValue === "balance",
+  );
+  assert.match(balanceItem.label, /0 ₽/);
+  assert.doesNotMatch(balanceItem.label, /устарел/i);
   fetchFailure = undefined;
   directMessages = true;
   await commands.get("vrata.refreshModels")();

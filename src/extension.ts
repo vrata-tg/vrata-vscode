@@ -4,7 +4,7 @@ import { Message, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
 import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
-import { accountTooltip } from "./account";
+import { accountTooltip, rubles } from "./account";
 import { requestError } from "./request-errors";
 import {
   CredentialOperationCancelled,
@@ -175,15 +175,8 @@ async function activateWithOutput(
   function updateStatus(): void {
     const { unavailable } = projectCatalog(credentials.catalog);
     const account = credentials.account;
-    const statusMessage = !credentials.connected
-      ? "$(plug) Врата AI: нет подключения"
-      : credentials.accountInvalid
-        ? "$(warning) Врата AI: неверный ключ"
-        : credentials.accountUnavailable || credentials.accountStale
-          ? "$(warning) Врата AI: нет связи"
-          : undefined;
-    if (statusMessage) {
-      status.text = statusMessage;
+    if (account && !credentials.accountInvalid) {
+      status.text = `$(key) Врата AI: ${rubles(account.balance.spendable)}`;
       status.show();
     } else {
       status.hide();
@@ -191,9 +184,6 @@ async function activateWithOutput(
     const tooltip = [
       account && !credentials.accountInvalid
         ? accountTooltip(account)
-        : undefined,
-      credentials.accountStale
-        ? "Данные баланса устарели: обновление не удалось."
         : undefined,
       credentials.accountInvalid
         ? "Ключ недействителен. Замените его."

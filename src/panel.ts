@@ -24,7 +24,6 @@ export class VrataPanel implements vscode.Disposable {
     private readonly credentials: {
       readonly connected: boolean;
       readonly accountInvalid: boolean;
-      readonly accountStale: boolean;
       readonly accountUnavailable: boolean;
       readonly account?: AccountSnapshot;
       loadAccount(): Promise<void>;
@@ -99,9 +98,8 @@ export class VrataPanel implements vscode.Disposable {
     const items = [connection];
     const account = c.account;
     if (account) {
-      const suffix = c.accountStale ? " (устарело)" : "";
       items.push({
-        label: `Баланс: ${rubles(account.balance.spendable)}${suffix}`,
+        label: `Баланс: ${rubles(account.balance.spendable)}`,
         iconPath: new vscode.ThemeIcon("credit-card"),
         contextValue: "balance",
       });
