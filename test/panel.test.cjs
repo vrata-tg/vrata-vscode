@@ -212,11 +212,11 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   await commands.get("vrata.setApiKey")();
 
   const treeProvider = treeProviders[0];
-  // 2. Panel shows connection state and balance rows once account loads.
+  // 2. Panel hides the redundant connected-state row but shows account data.
   await new Promise(setImmediate);
   let items = await treeProvider.getChildren();
   assert.ok(
-    items.some((item) => item.label.startsWith("Подключение: подключено")),
+    !items.some((item) => item.label.startsWith("Подключение:")),
     JSON.stringify(items.map((item) => item.label)),
   );
   assert.ok(

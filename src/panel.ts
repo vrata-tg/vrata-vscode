@@ -95,7 +95,7 @@ export class VrataPanel implements vscode.Disposable {
       iconPath: this.stateIcon(state),
       contextValue: "connection",
     };
-    const items = [connection];
+    const items: TreeItem[] = state === "connected" ? [] : [connection];
     const account = c.account;
     if (account) {
       items.push({
