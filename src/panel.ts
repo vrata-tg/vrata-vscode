@@ -101,6 +101,7 @@ export class VrataPanel implements vscode.Disposable {
       items.push({
         label: `Баланс: ${rubles(account.balance.spendable)}`,
         iconPath: new vscode.ThemeIcon("credit-card"),
+        command: { command: "vrata.getApiKey", title: "Открыть бота Врата AI" },
         contextValue: "balance",
       });
       const quota = quotaLabel(account.quota);

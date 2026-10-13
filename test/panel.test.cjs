@@ -223,6 +223,19 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     items.some((item) => item.label.includes("371,92")),
     "panel shows the spendable balance",
   );
+  const balanceItem = items.find((item) => item.contextValue === "balance");
+  assert.equal(
+    balanceItem.command.command,
+    "vrata.getApiKey",
+    "clicking the balance opens the bot",
+  );
+  await commands.get(balanceItem.command.command)();
+  assert.ok(
+    executed.some(
+      ([id, url]) => id === "openExternal" && url === "https://vrata.tg/bot",
+    ),
+    "balance action opens the official bot URL",
+  );
   assert.ok(
     items.some((item) => item.label.includes("24,6")),
     "panel shows the remaining key quota",

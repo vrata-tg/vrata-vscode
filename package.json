@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -45,6 +45,40 @@
           "command": "vrata.openChat",
           "group": "navigation",
           "when": "view == vrata.panel"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vrata.removeApiKey",
+          "when": "false"
+        },
+        {
+          "command": "vrata.refreshModels",
+          "when": "false"
+        },
+        {
+          "command": "vrata.selectModel",
+          "when": "false"
+        },
+        {
+          "command": "vrata.selectReasoning",
+          "when": "false"
+        },
+        {
+          "command": "vrata.copyDiagnostics",
+          "when": "false"
+        },
+        {
+          "command": "vrata.utilitySettings",
+          "when": "false"
+        },
+        {
+          "command": "vrata.showLogs",
+          "when": "false"
+        },
+        {
+          "command": "vrata.debugStaging",
+          "when": "false"
         }
       ]
     },
@@ -97,7 +131,7 @@
       },
       {
         "command": "vrata.getApiKey",
-        "title": "Получить ключ в боте",
+        "title": "Открыть бота Врата AI",
         "category": "Врата AI"
       },
       {
@@ -130,7 +164,7 @@
           {
             "id": "key",
             "title": "Вставьте API-ключ",
-            "description": "Проверка ключа бесплатна: расширение только читает доступный каталог. Ключ хранится в защищённом хранилище VS Code.\n[Вставить API-ключ](command:vrata.setApiKey)\n[Получить ключ в боте](command:vrata.getApiKey)",
+            "description": "Проверка ключа бесплатна: расширение только читает доступный каталог. Ключ хранится в защищённом хранилище VS Code.\n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
             "media": {
               "markdown": "media/connect.md"
             },
