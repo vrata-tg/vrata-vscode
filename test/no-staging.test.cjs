@@ -71,7 +71,11 @@ test("normal user scenario never contacts staging", async (t) => {
         error() {},
         show() {},
       }),
-      createStatusBarItem: () => ({ ...disposable, show() {} }),
+      createStatusBarItem: () => ({
+        ...disposable,
+        show() {},
+        hide() {},
+      }),
       registerTreeDataProvider: () => disposable,
       showQuickPick: async () => undefined,
       showInputBox: async () => undefined,
@@ -152,6 +156,7 @@ test("normal user scenario never contacts staging", async (t) => {
   // Full silent user flow: key insert, discovery, response, refreshes.
   vscode.window.showInputBox = async () => "user-key";
   await commands.get("vrata.setApiKey")();
+  await new Promise(setImmediate);
   const treeProvider = context.subscriptions.find(
     (item) => typeof item.getChildren === "function",
   );
@@ -162,6 +167,7 @@ test("normal user scenario never contacts staging", async (t) => {
       /Модель|Reasoning|Обновить|Данные от/.test(item.label),
     ),
   );
+  assert.ok(!items.some((item) => /лимит ключа/i.test(item.label)));
   await commands.get("vrata.refreshModels")();
 
   assert.ok(

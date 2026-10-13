@@ -22,6 +22,19 @@ test("balance and quota stay separate, including zero and reserve", () => {
   assert.equal(rubles("0"), "0 ₽");
 });
 
+test("unset key quota is omitted from the account tooltip", () => {
+  const tooltip = accountTooltip({
+    balance: {
+      paid_available: "0",
+      promo_available: "0",
+      reserved: "0",
+      spendable: "0",
+    },
+    quota: { limit: null, remaining: null },
+  });
+  assert.doesNotMatch(tooltip, /лимит ключа/i);
+});
+
 test("request errors map to actions without upstream details", () => {
   assert.equal(
     requestError(new TransportError("insufficient_balance", 402)).action

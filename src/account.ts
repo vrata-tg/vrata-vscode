@@ -10,17 +10,25 @@ export function rubles(atoms: string): string {
   return `${whole}${fraction ? `,${fraction}` : ""} ₽`;
 }
 
+export function quotaLabel(
+  quota: AccountSnapshot["quota"],
+): string | undefined {
+  if (quota.limit === null) return undefined;
+  return quota.remaining === null
+    ? `Лимит ключа: ${rubles(quota.limit)}; актуальный остаток недоступен`
+    : `Остаток лимита ключа: ${rubles(quota.remaining)}`;
+}
+
 export function accountTooltip(account: AccountSnapshot): string {
   const { balance, quota } = account;
+  const quotaText = quotaLabel(quota);
   return [
     `На счёте доступно: ${rubles(balance.spendable)}`,
     `Оплачено: ${rubles(balance.paid_available)}`,
     `Промо: ${rubles(balance.promo_available)}`,
     `Зарезервировано отдельно: ${rubles(balance.reserved)}`,
-    quota.remaining === null
-      ? quota.limit === null
-        ? "Лимит ключа: не задан"
-        : `Лимит ключа: ${rubles(quota.limit)}; актуальный остаток недоступен`
-      : `Остаток лимита ключа: ${rubles(quota.remaining)}`,
-  ].join("\n");
+    quotaText,
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n");
 }

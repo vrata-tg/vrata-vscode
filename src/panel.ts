@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { AccountSnapshot } from "./gateway";
-import { rubles } from "./account";
+import { quotaLabel, rubles } from "./account";
 import {
   ReasoningLevel,
   REASONING_CHOICES,
@@ -105,15 +105,13 @@ export class VrataPanel implements vscode.Disposable {
         iconPath: new vscode.ThemeIcon("credit-card"),
         contextValue: "balance",
       });
-      items.push({
-        label: `Остаток лимита ключа: ${
-          account.quota.remaining === null
-            ? "не задан"
-            : rubles(account.quota.remaining)
-        }`,
-        iconPath: new vscode.ThemeIcon("mirror"),
-        contextValue: "quota",
-      });
+      const quota = quotaLabel(account.quota);
+      if (quota)
+        items.push({
+          label: quota,
+          iconPath: new vscode.ThemeIcon("mirror"),
+          contextValue: "quota",
+        });
     } else if (state === "not_connected") {
       items.push({
         label: "Вставьте API-ключ, чтобы видеть баланс",
@@ -156,7 +154,11 @@ export class VrataPanel implements vscode.Disposable {
       });
     };
     add("Подключить / заменить ключ", "vrata.setApiKey", "key");
-    add("Открыть чат", "vrata.openChat", "comment-discussion");
+    add(
+      this.state() === "connected" ? "Выбрать модель в чате" : "Открыть чат",
+      this.state() === "connected" ? "vrata.openModelPicker" : "vrata.openChat",
+      this.state() === "connected" ? "list-selection" : "comment-discussion",
+    );
     add("Открыть бота", "vrata.getApiKey", "globe");
     return actions;
   }
@@ -236,6 +238,12 @@ export async function openChat(): Promise<void> {
   throw new Error("Встроенный чат недоступен в этой версии редактора.");
 }
 
+/** Opens the native chat model picker without submitting a chat message. */
+export async function openModelPicker(): Promise<void> {
+  await openChat();
+  await vscode.commands.executeCommand("workbench.action.chat.openModelPicker");
+}
+
 export function registerPanelCommands(
   panel: VrataPanel,
   catalog: () => readonly { id: string }[],
@@ -252,6 +260,13 @@ export function registerPanelCommands(
         await openChat();
       } catch (error) {
         // A missing built-in chat command is expected on older editors.
+        panel.report(error);
+      }
+    }),
+    vscode.commands.registerCommand("vrata.openModelPicker", async () => {
+      try {
+        await openModelPicker();
+      } catch (error) {
         panel.report(error);
       }
     }),

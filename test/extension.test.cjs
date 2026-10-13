@@ -12,6 +12,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   let dismissStartupError;
   let holdStartupError = true;
   let statusShown = false;
+  let statusHidden = 0;
   const executed = [];
   let utilitySettingAvailable = false;
   const values = new Map();
@@ -30,6 +31,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     manageCount = 0,
     provider,
     secretListener;
+  let chooseModelAfterConnect = false;
   let copied;
 
   const treeProviders = [];
@@ -137,6 +139,9 @@ test("native commands, masked input, silent discovery and secret events", async 
         show() {
           statusShown = true;
         },
+        hide() {
+          statusHidden++;
+        },
       }),
       registerTreeDataProvider: (viewId, treeProvider) => {
         assert.equal(viewId, "vrata.panel");
@@ -156,11 +161,16 @@ test("native commands, masked input, silent discovery and secret events", async 
         return input;
       },
       withProgress: async (_options, action) => action(),
-      showInformationMessage: async (message) => {
+      showInformationMessage: async (message, ...actions) => {
         notices.push(message);
         if (infoFailure) throw infoFailure;
         if (holdNotifications)
           await new Promise((resolve) => dismissNotifications.push(resolve));
+        if (chooseModelAfterConnect && actions.includes("Выбрать модель")) {
+          chooseModelAfterConnect = false;
+          return "Выбрать модель";
+        }
+        return undefined;
       },
       showErrorMessage: async (message, action) => {
         errors.push(message);
@@ -298,6 +308,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   );
   assert.ok(provider, "provider must be available before dismissing the error");
   assert.equal(statusShown, true);
+  assert.equal(statusHidden, 0);
   assert.equal(logShown, 0);
   holdStartupError = false;
   dismissStartupError();
@@ -348,6 +359,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   });
   input = "  arbitrary-format  ";
   holdNotifications = true;
+  chooseModelAfterConnect = true;
   let firstFinished = false;
   const firstInsertion = commands
     .get("vrata.setApiKey")()
@@ -372,6 +384,20 @@ test("native commands, masked input, silent discovery and secret events", async 
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
   await Promise.all(discoveryTasks);
+  await new Promise(setImmediate);
+  const onboardingCommands = executed
+    .map(([id]) => id)
+    .filter((id) =>
+      [
+        "workbench.action.chat.open",
+        "workbench.action.chat.openModelPicker",
+      ].includes(id),
+    );
+  assert.deepEqual(onboardingCommands, [
+    "workbench.action.chat.open",
+    "workbench.action.chat.openModelPicker",
+  ]);
+  assert.ok(statusHidden > 0, "healthy connection hides the status item");
   await commands.get("vrata.debugStaging")();
   assert.equal(
     requests.filter((request) =>

@@ -87,7 +87,11 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
         error() {},
         show() {},
       }),
-      createStatusBarItem: () => ({ ...disposable, show() {} }),
+      createStatusBarItem: () => ({
+        ...disposable,
+        show() {},
+        hide() {},
+      }),
       registerTreeDataProvider: (viewId, treeProvider) => {
         assert.equal(viewId, "vrata.panel");
         treeProviders.push(treeProvider);
@@ -240,10 +244,10 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     items.some(
       (item) =>
         item.command &&
-        item.command.command === "vrata.openChat" &&
-        item.label === "Открыть чат",
+        item.command.command === "vrata.openModelPicker" &&
+        item.label === "Выбрать модель в чате",
     ),
-    "panel offers the open-chat action",
+    "connected panel offers a direct model-selection action",
   );
   assert.ok(
     !items.some(
@@ -453,5 +457,13 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     chatOpen.length,
     1,
     "chat opens with no text injected into the input",
+  );
+
+  // 12. The conversion action opens the chat and invokes its native model picker.
+  executed.length = 0;
+  await commands.get("vrata.openModelPicker")();
+  assert.deepEqual(
+    executed.map(([id]) => id),
+    ["workbench.action.chat.open", "workbench.action.chat.openModelPicker"],
   );
 });

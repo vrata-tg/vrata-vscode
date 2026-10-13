@@ -4,7 +4,7 @@ import { Message, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
 import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
-import { accountTooltip, rubles } from "./account";
+import { accountTooltip } from "./account";
 import { requestError } from "./request-errors";
 import {
   CredentialOperationCancelled,
@@ -175,15 +175,19 @@ async function activateWithOutput(
   function updateStatus(): void {
     const { unavailable } = projectCatalog(credentials.catalog);
     const account = credentials.account;
-    status.text = !credentials.connected
-      ? "$(plug) Врата AI: подключить"
+    const statusMessage = !credentials.connected
+      ? "$(plug) Врата AI: нет подключения"
       : credentials.accountInvalid
         ? "$(warning) Врата AI: неверный ключ"
-        : account
-          ? `$(key) Врата AI: ${rubles(account.balance.spendable)}${credentials.accountStale ? " (устарело)" : ""}`
-          : credentials.accountUnavailable
-            ? "$(warning) Врата AI: нет связи"
-            : "$(sync~spin) Врата AI: баланс…";
+        : credentials.accountUnavailable || credentials.accountStale
+          ? "$(warning) Врата AI: нет связи"
+          : undefined;
+    if (statusMessage) {
+      status.text = statusMessage;
+      status.show();
+    } else {
+      status.hide();
+    }
     const tooltip = [
       account && !credentials.accountInvalid
         ? accountTooltip(account)
@@ -286,8 +290,14 @@ async function activateWithOutput(
       );
       void vscode.window
         .showInformationMessage(
-          "API-ключ сохранён. Выберите модель Врат AI в меню моделей чата (Chat → Manage Models).",
+          "API-ключ сохранён. Откройте выбор модели и выберите Врата AI.",
+          "Выбрать модель",
         )
+        .then((choice) => {
+          if (choice === "Выбрать модель")
+            return vscode.commands.executeCommand("vrata.openModelPicker");
+          return undefined;
+        })
         .then(undefined, (error) => logError(error, ...keys));
     } finally {
       editing = false;
@@ -417,7 +427,6 @@ async function activateWithOutput(
     void showError("Не удалось прочитать ключ Врат AI. Повторите подключение.");
   }
   updateStatus();
-  status.show();
 
   context.subscriptions.push(
     vscode.lm.registerLanguageModelChatProvider("vrata", {
