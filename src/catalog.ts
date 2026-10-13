@@ -71,7 +71,10 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
       version: id,
       maxInputTokens: metadata.max_input_tokens as number,
       maxOutputTokens: metadata.max_output_tokens as number,
-      capabilities: { toolCalling: true, imageInput: false },
+      capabilities: {
+        toolCalling: true,
+        imageInput: metadata.supports_images === true,
+      },
     };
     if (transports[id])
       models[models.findIndex((existing) => existing.id === id)] = model;

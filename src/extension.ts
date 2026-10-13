@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { diagnosticReport, formatError } from "./diagnostics";
-import { Message, streamChat } from "./transport";
+import { Message, MessageContentPart, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
 import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
@@ -41,6 +41,25 @@ function text(parts: readonly unknown[]): string {
     .join("\n");
 }
 
+function imagePart(part: unknown): MessageContentPart | undefined {
+  if (!part || typeof part !== "object") return undefined;
+  const value = part as { data?: unknown; mimeType?: unknown };
+  if (value.data === undefined && value.mimeType === undefined)
+    return undefined;
+  if (
+    typeof value.mimeType !== "string" ||
+    !/^image\/(png|jpeg|gif|webp)$/i.test(value.mimeType) ||
+    !(value.data instanceof Uint8Array)
+  )
+    throw new Error("Vrata supports PNG, JPEG, GIF and WebP images only");
+  return {
+    type: "image_url",
+    image_url: {
+      url: `data:${value.mimeType};base64,${Buffer.from(value.data).toString("base64")}`,
+    },
+  };
+}
+
 export function toMessages(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): Message[] {
@@ -51,19 +70,27 @@ export function toMessages(
         ? "assistant"
         : "user";
     let content = "";
+    const contentParts: MessageContentPart[] = [];
+    let hasImage = false;
     const calls: NonNullable<Message["tool_calls"]> = [];
+    const appendText = (value: string) => {
+      if (hasImage) contentParts.push({ type: "text", text: value });
+      else content += value;
+    };
     const flush = () => {
-      if (content || calls.length)
+      if (content || contentParts.length || calls.length)
         result.push({
           role,
-          content: content || null,
+          content: hasImage ? [...contentParts] : content || null,
           ...(calls.length ? { tool_calls: [...calls] } : {}),
         });
       content = "";
+      contentParts.length = 0;
+      hasImage = false;
       calls.length = 0;
     };
     for (const part of message.content) {
-      if (part instanceof vscode.LanguageModelTextPart) content += part.value;
+      if (part instanceof vscode.LanguageModelTextPart) appendText(part.value);
       else if (part instanceof vscode.LanguageModelToolCallPart) {
         calls.push({
           id: part.callId,
@@ -77,7 +104,17 @@ export function toMessages(
           tool_call_id: part.callId,
           content: text(part.content),
         });
-      } else throw new Error("Vrata supports text and tool parts only");
+      } else {
+        const image = imagePart(part);
+        if (!image)
+          throw new Error("Vrata supports text, image and tool parts only");
+        if (!hasImage) {
+          if (content) contentParts.push({ type: "text", text: content });
+          content = "";
+          hasImage = true;
+        }
+        contentParts.push(image);
+      }
     }
     flush();
   }

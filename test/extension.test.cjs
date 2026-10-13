@@ -216,12 +216,62 @@ test("native commands, masked input, silent discovery and secret events", async 
     return id === "vscode" ? vscode : originalLoad.call(this, id, ...args);
   };
   const extension = require("../dist/extension");
+  const { toAnthropicMessages } = require("../dist/messages-transport");
   Module._load = originalLoad;
+  const image = {
+    data: Uint8Array.from([0, 1, 2, 255]),
+    mimeType: "image/png",
+  };
+  const visionMessages = extension.toMessages([
+    {
+      role: 1,
+      content: [new vscode.LanguageModelTextPart("Look at this:"), image],
+    },
+  ]);
+  assert.deepEqual(visionMessages[0].content, [
+    { type: "text", text: "Look at this:" },
+    {
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,AAEC/w==" },
+    },
+  ]);
+  assert.deepEqual(toAnthropicMessages(visionMessages), [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Look at this:" },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: "AAEC/w==",
+          },
+        },
+      ],
+    },
+  ]);
+  assert.throws(
+    () =>
+      extension.toMessages([
+        {
+          role: 1,
+          content: [{ data: new Uint8Array([1]), mimeType: "image/bmp" }],
+        },
+      ]),
+    /PNG, JPEG, GIF and WebP/,
+  );
   const originalFetch = global.fetch;
   let directMessages = false;
   global.fetch = async (url, options) => {
     requests.push({ url, options });
     if (fetchFailure) throw fetchFailure;
+    if (options.method === "POST" && url.endsWith("/v1/chat/completions"))
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ready"}}]}\n\n' +
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+          "data: [DONE]\n\n",
+      );
     if (directMessages && url.endsWith("/v1/messages"))
       return new Response(
         'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' +
@@ -269,6 +319,7 @@ test("native commands, masked input, silent discovery and secret events", async 
                 max_input_tokens: 100000,
                 max_output_tokens: 4096,
                 supports_tools: true,
+                supports_images: true,
               },
             },
           ],
@@ -290,6 +341,7 @@ test("native commands, masked input, silent discovery and secret events", async 
                       max_input_tokens: 120000,
                       max_output_tokens: 8000,
                       supports_tools: true,
+                      supports_images: true,
                       verified_transport: "chat_completions",
                     },
                   },
@@ -425,12 +477,32 @@ test("native commands, masked input, silent discovery and secret events", async 
     order: 0,
   });
   assert.equal(discovered[0][0].maxInputTokens, 120000);
-  assert.equal(discovered[0][0].capabilities.imageInput, false);
+  assert.equal(discovered[0][0].capabilities.imageInput, true);
   assert.equal(
     requests.length,
     5,
     "discovery must reuse the catalog returned by key validation",
   );
+  await provider.provideLanguageModelChatResponse(
+    discovered[0][0],
+    [
+      {
+        role: 1,
+        content: [new vscode.LanguageModelTextPart("Look at this:"), image],
+      },
+    ],
+    {},
+    { report: () => {} },
+    {
+      isCancellationRequested: false,
+      onCancellationRequested: () => disposable,
+    },
+  );
+  const visionBody = JSON.parse(
+    requests.findLast((request) => request.options.method === "POST").options
+      .body,
+  );
+  assert.deepEqual(visionBody.messages[0].content, visionMessages[0].content);
   assert.equal(inputOptions.password, true);
   assert.equal(inputOptions.value, undefined);
   assert.ok(inputOptions.validateInput(" "));
@@ -439,7 +511,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 5);
+  assert.equal(requests.length, 7);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
@@ -618,6 +690,33 @@ test("native commands, masked input, silent discovery and secret events", async 
     requests.findLast((request) => request.options.method === "POST").url,
     /\/v1\/messages$/,
   );
+  await provider.provideLanguageModelChatResponse(
+    claude,
+    [
+      {
+        role: 1,
+        content: [new vscode.LanguageModelTextPart("Look at this:"), image],
+      },
+    ],
+    {},
+    { report: () => {} },
+    token,
+  );
+  const anthropicVisionBody = JSON.parse(
+    requests.findLast((request) => request.options.method === "POST").options
+      .body,
+  );
+  assert.deepEqual(anthropicVisionBody.messages[0].content, [
+    { type: "text", text: "Look at this:" },
+    {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/png",
+        data: "AAEC/w==",
+      },
+    },
+  ]);
   await commands.get("vrata.copyDiagnostics")();
   assert.match(copied, /Модель: claude-fable-5/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);

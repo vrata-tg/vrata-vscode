@@ -41,9 +41,25 @@ test("projects verified OpenAI and Anthropic public IDs without inventing capabi
   );
   assert.deepEqual(result.models[0].capabilities, {
     toolCalling: true,
-    imageInput: false,
+    imageInput: true,
   });
   assert.deepEqual(result.unavailable, []);
+});
+
+test("only explicitly confirmed image support reaches the VS Code capability", () => {
+  const result = projectCatalog([
+    entry("vision", { supports_images: true }),
+    entry("unknown", { supports_images: null }),
+    entry("disabled", { supports_images: false }),
+  ]);
+  assert.deepEqual(
+    result.models.map((model) => [model.id, model.capabilities.imageInput]),
+    [
+      ["vision", true],
+      ["unknown", false],
+      ["disabled", false],
+    ],
+  );
 });
 
 test("does not expose models with incomplete limits, tools or transport", () => {
