@@ -37,6 +37,7 @@ test("native commands, masked input, silent discovery and secret events", async 
 
   const treeProviders = [];
   const quickPicks = [];
+  const quickPickItems = [];
   let quickPick = null;
   const globalValues = new Map([["welcomeShown", true]]);
   const disposable = { dispose() {} };
@@ -157,6 +158,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       },
       showQuickPick: async (items) => {
         manageCount++;
+        quickPickItems.push(items.map((item) => item.label));
         const picked =
           typeof quickPick === "function" ? quickPick(items) : undefined;
         quickPicks.push(picked);
@@ -409,6 +411,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     1,
     "explicit Add Models must open provider management",
   );
+  assert.deepEqual(quickPickItems[0], [
+    "Вставить API-ключ",
+    "Пополнить баланс / открыть бот",
+    "Как начать работу",
+  ]);
   assert.equal(requests.length, 0);
   const discoveryTasks = [];
   provider.onDidChangeLanguageModelChatInformation(() => {
@@ -457,6 +464,12 @@ test("native commands, masked input, silent discovery and secret events", async 
     "workbench.action.chat.openModelPicker",
   ]);
   assert.equal(statusShown, true, "healthy connection shows the balance");
+  await commands.get("vrata.manage")();
+  assert.deepEqual(quickPickItems.at(-1), [
+    "Заменить API-ключ",
+    "Пополнить баланс / открыть бот",
+    "Как начать работу",
+  ]);
   await commands.get("vrata.debugStaging")();
   assert.equal(
     requests.filter((request) =>

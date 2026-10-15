@@ -411,18 +411,6 @@ async function activateWithOutput(
           command: "vrata.setApiKey",
         },
         { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
-        ...(credentials.connected
-          ? [
-              {
-                label: "Обновить список моделей",
-                command: "vrata.refreshModels",
-              },
-              { label: "Удалить ключ", command: "vrata.removeApiKey" },
-            ]
-          : []),
-        { label: "Открыть журнал", command: "vrata.showLogs" },
-        { label: "Проверить staging-каталог", command: "vrata.debugStaging" },
-        { label: "Скопировать диагностику", command: "vrata.copyDiagnostics" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
       ],
       {
