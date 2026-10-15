@@ -37,7 +37,7 @@ export function httpCode(
 }
 export interface Message {
   role: "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | MessageContentPart[] | null;
   tool_call_id?: string;
   tool_calls?: {
     id: string;
@@ -45,6 +45,9 @@ export interface Message {
     function: { name: string; arguments: string };
   }[];
 }
+export type MessageContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 interface Delta {
   content?: string;
   tool_calls?: {

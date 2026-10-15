@@ -12,6 +12,8 @@ test("native commands, masked input, silent discovery and secret events", async 
   let dismissStartupError;
   let holdStartupError = true;
   let statusShown = false;
+  let statusHidden = 0;
+  let statusItem;
   const executed = [];
   let utilitySettingAvailable = false;
   const values = new Map();
@@ -30,10 +32,12 @@ test("native commands, masked input, silent discovery and secret events", async 
     manageCount = 0,
     provider,
     secretListener;
+  let chooseModelAfterConnect = false;
   let copied;
-  let copilotInstalled = false;
+
   const treeProviders = [];
   const quickPicks = [];
+  const quickPickItems = [];
   let quickPick = null;
   const globalValues = new Map([["welcomeShown", true]]);
   const disposable = { dispose() {} };
@@ -92,6 +96,11 @@ test("native commands, masked input, silent discovery and secret events", async 
         Object.assign(this, { callId, content });
       }
     },
+    ThemeIcon: class {
+      constructor(id) {
+        this.id = id;
+      }
+    },
     workspace: {
       getConfiguration: () => ({
         inspect: () =>
@@ -132,12 +141,16 @@ test("native commands, masked input, silent discovery and secret events", async 
           show: () => logShown++,
         };
       },
-      createStatusBarItem: () => ({
-        ...disposable,
-        show() {
-          statusShown = true;
-        },
-      }),
+      createStatusBarItem: () =>
+        (statusItem = {
+          ...disposable,
+          show() {
+            statusShown = true;
+          },
+          hide() {
+            statusHidden++;
+          },
+        }),
       registerTreeDataProvider: (viewId, treeProvider) => {
         assert.equal(viewId, "vrata.panel");
         treeProviders.push(treeProvider);
@@ -145,6 +158,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       },
       showQuickPick: async (items) => {
         manageCount++;
+        quickPickItems.push(items.map((item) => item.label));
         const picked =
           typeof quickPick === "function" ? quickPick(items) : undefined;
         quickPicks.push(picked);
@@ -156,11 +170,16 @@ test("native commands, masked input, silent discovery and secret events", async 
         return input;
       },
       withProgress: async (_options, action) => action(),
-      showInformationMessage: async (message) => {
+      showInformationMessage: async (message, ...actions) => {
         notices.push(message);
         if (infoFailure) throw infoFailure;
         if (holdNotifications)
           await new Promise((resolve) => dismissNotifications.push(resolve));
+        if (chooseModelAfterConnect && actions.includes("Выбрать модель")) {
+          chooseModelAfterConnect = false;
+          return "Выбрать модель";
+        }
+        return undefined;
       },
       showErrorMessage: async (message, action) => {
         errors.push(message);
@@ -185,12 +204,7 @@ test("native commands, masked input, silent discovery and secret events", async 
         return commands.get(id)?.(...args);
       },
     },
-    extensions: {
-      getExtension: (id) => {
-        executed.push(["extensions.getExtension", id]);
-        return copilotInstalled ? { id } : undefined;
-      },
-    },
+
     lm: {
       registerLanguageModelChatProvider: (vendor, value) => {
         assert.equal(vendor, "vrata");
@@ -204,12 +218,68 @@ test("native commands, masked input, silent discovery and secret events", async 
     return id === "vscode" ? vscode : originalLoad.call(this, id, ...args);
   };
   const extension = require("../dist/extension");
+  const { toAnthropicMessages } = require("../dist/messages-transport");
   Module._load = originalLoad;
+  const image = {
+    data: Uint8Array.from([0, 1, 2, 255]),
+    mimeType: "image/png",
+  };
+  const visionMessages = extension.toMessages([
+    {
+      role: 1,
+      content: [new vscode.LanguageModelTextPart("Look at this:"), image],
+    },
+  ]);
+  assert.deepEqual(visionMessages[0].content, [
+    { type: "text", text: "Look at this:" },
+    {
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,AAEC/w==" },
+    },
+  ]);
+  assert.deepEqual(toAnthropicMessages(visionMessages), [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Look at this:" },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: "AAEC/w==",
+          },
+        },
+      ],
+    },
+  ]);
+  assert.throws(
+    () =>
+      extension.toMessages([
+        {
+          role: 1,
+          content: [{ data: new Uint8Array([1]), mimeType: "image/bmp" }],
+        },
+      ]),
+    /PNG, JPEG, GIF and WebP/,
+  );
   const originalFetch = global.fetch;
   let directMessages = false;
+  let directResponses = false;
   global.fetch = async (url, options) => {
     requests.push({ url, options });
     if (fetchFailure) throw fetchFailure;
+    if (options.method === "POST" && url.endsWith("/v1/responses"))
+      return new Response(
+        'data: {"type":"response.output_text.delta","delta":"ready"}\n\n' +
+          'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+      );
+    if (options.method === "POST" && url.endsWith("/v1/chat/completions"))
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ready"}}]}\n\n' +
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+          "data: [DONE]\n\n",
+      );
     if (directMessages && url.endsWith("/v1/messages"))
       return new Response(
         'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' +
@@ -239,6 +309,28 @@ test("native commands, masked input, silent discovery and secret events", async 
           },
         }),
       );
+    if (directResponses)
+      return new Response(
+        JSON.stringify({
+          data: options.headers["Anthropic-Version"]
+            ? []
+            : [
+                {
+                  id: "gpt-6-astra",
+                  gateway_metadata: {
+                    name: "gpt-6-astra",
+                    family: "gpt",
+                    protocol: "openai",
+                    max_input_tokens: 1050000,
+                    max_output_tokens: 128000,
+                    supports_tools: true,
+                    supports_images: true,
+                    verified_transport: "responses",
+                  },
+                },
+              ],
+        }),
+      );
     if (directMessages)
       return new Response(
         JSON.stringify({
@@ -257,6 +349,7 @@ test("native commands, masked input, silent discovery and secret events", async 
                 max_input_tokens: 100000,
                 max_output_tokens: 4096,
                 supports_tools: true,
+                supports_images: true,
               },
             },
           ],
@@ -278,6 +371,7 @@ test("native commands, masked input, silent discovery and secret events", async 
                       max_input_tokens: 120000,
                       max_output_tokens: 8000,
                       supports_tools: true,
+                      supports_images: true,
                       verified_transport: "chat_completions",
                     },
                   },
@@ -302,7 +396,8 @@ test("native commands, masked input, silent discovery and secret events", async 
     "activation must finish while the keyring error notification is open",
   );
   assert.ok(provider, "provider must be available before dismissing the error");
-  assert.equal(statusShown, true);
+  assert.equal(statusShown, false);
+  assert.ok(statusHidden > 0, "missing account hides the status item");
   assert.equal(logShown, 0);
   holdStartupError = false;
   dismissStartupError();
@@ -344,6 +439,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     1,
     "explicit Add Models must open provider management",
   );
+  assert.deepEqual(quickPickItems[0], [
+    "Вставить API-ключ",
+    "Пополнить баланс / открыть бот",
+    "Как начать работу",
+  ]);
   assert.equal(requests.length, 0);
   const discoveryTasks = [];
   provider.onDidChangeLanguageModelChatInformation(() => {
@@ -353,6 +453,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   });
   input = "  arbitrary-format  ";
   holdNotifications = true;
+  chooseModelAfterConnect = true;
   let firstFinished = false;
   const firstInsertion = commands
     .get("vrata.setApiKey")()
@@ -377,6 +478,26 @@ test("native commands, masked input, silent discovery and secret events", async 
   dismissNotifications.forEach((resolve) => resolve());
   await firstInsertion;
   await Promise.all(discoveryTasks);
+  await new Promise(setImmediate);
+  const onboardingCommands = executed
+    .map(([id]) => id)
+    .filter((id) =>
+      [
+        "workbench.action.chat.open",
+        "workbench.action.chat.openModelPicker",
+      ].includes(id),
+    );
+  assert.deepEqual(onboardingCommands, [
+    "workbench.action.chat.open",
+    "workbench.action.chat.openModelPicker",
+  ]);
+  assert.equal(statusShown, true, "healthy connection shows the balance");
+  await commands.get("vrata.manage")();
+  assert.deepEqual(quickPickItems.at(-1), [
+    "Заменить API-ключ",
+    "Пополнить баланс / открыть бот",
+    "Как начать работу",
+  ]);
   await commands.get("vrata.debugStaging")();
   assert.equal(
     requests.filter((request) =>
@@ -390,18 +511,39 @@ test("native commands, masked input, silent discovery and secret events", async 
   ]);
   assert.deepEqual(
     discovered.map((models) => models.map((model) => model.id)),
-    [
-      ["gpt-5.6-terra", "vrata-auto"],
-      ["gpt-5.6-terra", "vrata-auto"],
-    ],
+    [["gpt-5.6-terra"], ["gpt-5.6-terra"]],
   );
+  assert.deepEqual(discovered[0][0].category, {
+    label: "Врата AI",
+    order: 0,
+  });
   assert.equal(discovered[0][0].maxInputTokens, 120000);
-  assert.equal(discovered[0][0].capabilities.imageInput, false);
+  assert.equal(discovered[0][0].capabilities.imageInput, true);
   assert.equal(
     requests.length,
     5,
     "discovery must reuse the catalog returned by key validation",
   );
+  await provider.provideLanguageModelChatResponse(
+    discovered[0][0],
+    [
+      {
+        role: 1,
+        content: [new vscode.LanguageModelTextPart("Look at this:"), image],
+      },
+    ],
+    {},
+    { report: () => {} },
+    {
+      isCancellationRequested: false,
+      onCancellationRequested: () => disposable,
+    },
+  );
+  const visionBody = JSON.parse(
+    requests.findLast((request) => request.options.method === "POST").options
+      .body,
+  );
+  assert.deepEqual(visionBody.messages[0].content, visionMessages[0].content);
   assert.equal(inputOptions.password, true);
   assert.equal(inputOptions.value, undefined);
   assert.ok(inputOptions.validateInput(" "));
@@ -410,7 +552,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 5);
+  assert.equal(requests.length, 7);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
@@ -523,7 +665,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     (
       await provider.provideLanguageModelChatInformation({ silent: true }, {})
     ).map((model) => model.id),
-    ["gpt-5.6-terra", "vrata-auto"],
+    ["gpt-5.6-terra"],
   );
   assertLogged(/catalog preparation failed/);
   credentials.loadCatalog = loadCatalog;
@@ -531,6 +673,9 @@ test("native commands, masked input, silent discovery and secret events", async 
   fetchFailure = new Error(`stream failed ${input}`, {
     cause: new Error("stream socket cause"),
   });
+  const accountCallsBeforeFailure = requests.filter((request) =>
+    request.url.endsWith("/v1/account"),
+  ).length;
   const token = {
     isCancellationRequested: false,
     onCancellationRequested: () => disposable,
@@ -553,6 +698,19 @@ test("native commands, masked input, silent discovery and secret events", async 
     "gpt-5.6-terra",
   );
   assertLogged(/network/);
+  assert.equal(
+    requests.filter((request) => request.url.endsWith("/v1/account")).length,
+    accountCallsBeforeFailure + 1,
+    "failed requests refresh the account before returning",
+  );
+  assert.match(statusItem.text, /Врата AI: 0 ₽/);
+  assert.doesNotMatch(statusItem.text, /устарел/i);
+  const panelItems = await treeProviders[0].getChildren();
+  const balanceItem = panelItems.find(
+    (item) => item.contextValue === "balance",
+  );
+  assert.match(balanceItem.label, /0 ₽/);
+  assert.doesNotMatch(balanceItem.label, /устарел/i);
   fetchFailure = undefined;
   directMessages = true;
   await commands.get("vrata.refreshModels")();
@@ -573,8 +731,67 @@ test("native commands, masked input, silent discovery and secret events", async 
     requests.findLast((request) => request.options.method === "POST").url,
     /\/v1\/messages$/,
   );
+  await provider.provideLanguageModelChatResponse(
+    claude,
+    [
+      {
+        role: 1,
+        content: [new vscode.LanguageModelTextPart("Look at this:"), image],
+      },
+    ],
+    {},
+    { report: () => {} },
+    token,
+  );
+  const anthropicVisionBody = JSON.parse(
+    requests.findLast((request) => request.options.method === "POST").options
+      .body,
+  );
+  assert.deepEqual(anthropicVisionBody.messages[0].content, [
+    { type: "text", text: "Look at this:" },
+    {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/png",
+        data: "AAEC/w==",
+      },
+    },
+  ]);
+  directMessages = false;
+  directResponses = true;
+  await commands.get("vrata.refreshModels")();
+  const [responsesModel] = await provider.provideLanguageModelChatInformation(
+    { silent: true },
+    {},
+  );
+  const responsesParts = [];
+  await provider.provideLanguageModelChatResponse(
+    responsesModel,
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    { modelOptions: { reasoningEffort: "high" } },
+    { report: (part) => responsesParts.push(part.value) },
+    token,
+  );
+  assert.deepEqual(responsesParts, ["ready"]);
+  const responsesRequest = requests.findLast(
+    (request) => request.options.method === "POST",
+  );
+  assert.match(responsesRequest.url, /\/v1\/responses$/);
+  assert.deepEqual(JSON.parse(responsesRequest.options.body), {
+    model: "gpt-6-astra",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "hello" }],
+      },
+    ],
+    max_output_tokens: 128000,
+    reasoning: { effort: "high" },
+    stream: true,
+  });
   await commands.get("vrata.copyDiagnostics")();
-  assert.match(copied, /Модель: claude-fable-5/);
+  assert.match(copied, /Модель: gpt-6-astra/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
   await commands.get("vrata.removeApiKey")();
   await assert.rejects(

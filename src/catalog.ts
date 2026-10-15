@@ -3,22 +3,7 @@ import * as vscode from "vscode";
 export interface CatalogProjection {
   models: vscode.LanguageModelChatInformation[];
   unavailable: string[];
-  transports: Record<string, "chat_completions" | "messages">;
-}
-
-/**
- * The stable chat entry that the extension routes to the panel's chosen
- * model. Never a real gateway model id; the gateway never sees it.
- */
-export const ROUTED_MODEL_ID = "vrata-auto";
-
-export const ROUTED_MODEL_NAME = "Врата AI (авто)";
-
-/** First confirmed catalog model, used when the panel has no choice. */
-export function fallbackModelId(
-  catalog: readonly unknown[],
-): string | undefined {
-  return projectCatalog(catalog).models[0]?.id;
+  transports: Record<string, "chat_completions" | "messages" | "responses">;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -30,6 +15,11 @@ function record(value: unknown): Record<string, unknown> | undefined {
 function limit(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
+
+// The production catalog currently omits this flag for gpt-6.1-sol even though
+// the model accepts the image payload used by this provider. Keep the exception
+// explicit instead of inferring vision support from a model family.
+const KNOWN_VISION_MODELS = new Set(["gpt-6.1-sol"]);
 
 /** The server's max_input_tokens is an input cap, not a total context window. */
 export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
@@ -49,8 +39,9 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
     let reason: string | undefined;
     const transport =
       metadata.protocol === "openai" &&
-      metadata.verified_transport === "chat_completions"
-        ? "chat_completions"
+      (metadata.verified_transport === "chat_completions" ||
+        metadata.verified_transport === "responses")
+        ? metadata.verified_transport
         : metadata.protocol === "anthropic" &&
             metadata.verified_transport === "messages"
           ? "messages"
@@ -76,7 +67,9 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
     }
     if (
       transports[id] === "messages" ||
-      (transports[id] && transport !== "messages")
+      (transports[id] === "responses" && transport !== "messages") ||
+      (transports[id] === "chat_completions" &&
+        transport === "chat_completions")
     )
       continue;
     const model = {
@@ -86,7 +79,12 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
       version: id,
       maxInputTokens: metadata.max_input_tokens as number,
       maxOutputTokens: metadata.max_output_tokens as number,
-      capabilities: { toolCalling: true, imageInput: false },
+      capabilities: {
+        toolCalling: true,
+        imageInput:
+          metadata.supports_images === true ||
+          (metadata.supports_images == null && KNOWN_VISION_MODELS.has(id)),
+      },
     };
     if (transports[id])
       models[models.findIndex((existing) => existing.id === id)] = model;

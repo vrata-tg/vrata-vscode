@@ -41,9 +41,32 @@ test("projects verified OpenAI and Anthropic public IDs without inventing capabi
   );
   assert.deepEqual(result.models[0].capabilities, {
     toolCalling: true,
-    imageInput: false,
+    imageInput: true,
   });
   assert.deepEqual(result.unavailable, []);
+});
+
+test("only explicitly confirmed image support reaches the VS Code capability", () => {
+  const result = projectCatalog([
+    entry("vision", { supports_images: true }),
+    entry("unknown", { supports_images: null }),
+    entry("gpt-6.1-sol", { supports_images: null }),
+    entry("disabled", { supports_images: false }),
+  ]);
+  assert.deepEqual(
+    result.models.map((model) => [model.id, model.capabilities.imageInput]),
+    [
+      ["vision", true],
+      ["unknown", false],
+      ["gpt-6.1-sol", true],
+      ["disabled", false],
+    ],
+  );
+  assert.equal(
+    projectCatalog([entry("gpt-6.1-sol", { supports_images: false })]).models[0]
+      .capabilities.imageInput,
+    false,
+  );
 });
 
 test("does not expose models with incomplete limits, tools or transport", () => {
@@ -67,6 +90,23 @@ test("does not expose models with incomplete limits, tools or transport", () => 
   assert.match(result.unavailable[3], /транспорт/);
   assert.match(result.unavailable[4], /транспорт/);
   assert.deepEqual(projectCatalog([]).models, []);
+});
+
+test("accepts the verified OpenAI Responses transport", () => {
+  const result = projectCatalog([
+    entry("responses-model", { verified_transport: "responses" }),
+    entry("unknown-protocol", {
+      protocol: "unknown",
+      verified_transport: "responses",
+    }),
+  ]);
+  assert.deepEqual(
+    result.models.map((model) => model.id),
+    ["responses-model"],
+  );
+  assert.equal(result.transports["responses-model"], "responses");
+  assert.equal(result.unavailable.length, 1);
+  assert.match(result.unavailable[0], /транспорт/);
 });
 
 test("prefers direct Messages when both protocol views expose a model", () => {

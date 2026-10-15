@@ -1,4 +1,22 @@
-import { httpCode, Message, Part, TransportError } from "./transport";
+import {
+  httpCode,
+  Message,
+  MessageContentPart,
+  Part,
+  TransportError,
+} from "./transport";
+
+function anthropicContentPart(part: MessageContentPart): object {
+  if (part.type === "text") return { type: "text", text: part.text };
+  const match = /^data:(image\/(?:png|jpeg|gif|webp));base64,(.+)$/i.exec(
+    part.image_url.url,
+  );
+  if (!match) throw new Error("Invalid image data URL");
+  return {
+    type: "image",
+    source: { type: "base64", media_type: match[1], data: match[2] },
+  };
+}
 
 export function toAnthropicMessages(messages: readonly Message[]): object[] {
   const result: { role: "user" | "assistant"; content: object[] }[] = [];
@@ -12,7 +30,9 @@ export function toAnthropicMessages(messages: readonly Message[]): object[] {
         content: message.content ?? "",
       });
     } else {
-      if (message.content)
+      if (Array.isArray(message.content))
+        content.push(...message.content.map(anthropicContentPart));
+      else if (message.content)
         content.push({ type: "text", text: message.content });
       for (const call of message.tool_calls ?? [])
         content.push({

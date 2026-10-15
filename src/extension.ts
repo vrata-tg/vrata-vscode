@@ -1,13 +1,9 @@
 import * as vscode from "vscode";
 import { diagnosticReport, formatError } from "./diagnostics";
-import { Message, streamChat } from "./transport";
+import { Message, MessageContentPart, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
-import {
-  fallbackModelId,
-  projectCatalog,
-  ROUTED_MODEL_ID,
-  ROUTED_MODEL_NAME,
-} from "./catalog";
+import { streamResponses, toResponsesInput } from "./responses-transport";
+import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
 import { accountTooltip, rubles } from "./account";
 import { requestError } from "./request-errors";
@@ -17,7 +13,6 @@ import {
   SECRET_KEY,
 } from "./credentials";
 import {
-  AccountError,
   API_ORIGIN,
   STAGING_API_ORIGIN,
   BOT_URL,
@@ -27,6 +22,17 @@ import {
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
 
+const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
+
+function modelPickerCategory(): string | { label: string; order: number } {
+  // VS Code 1.126 changed the provider metadata shape from an ordered object
+  // to a plain string. Keep the old shape for the minimum supported editor.
+  const minor = Number(vscode.version.split(".")[1] ?? 0);
+  return minor >= 126
+    ? MODEL_PICKER_CATEGORY_LABEL
+    : { label: MODEL_PICKER_CATEGORY_LABEL, order: 0 };
+}
+
 function text(parts: readonly unknown[]): string {
   return parts
     .map((part) => {
@@ -34,6 +40,25 @@ function text(parts: readonly unknown[]): string {
       throw new Error("Vrata supports text tool results only");
     })
     .join("\n");
+}
+
+function imagePart(part: unknown): MessageContentPart | undefined {
+  if (!part || typeof part !== "object") return undefined;
+  const value = part as { data?: unknown; mimeType?: unknown };
+  if (value.data === undefined && value.mimeType === undefined)
+    return undefined;
+  if (
+    typeof value.mimeType !== "string" ||
+    !/^image\/(png|jpeg|gif|webp)$/i.test(value.mimeType) ||
+    !(value.data instanceof Uint8Array)
+  )
+    throw new Error("Vrata supports PNG, JPEG, GIF and WebP images only");
+  return {
+    type: "image_url",
+    image_url: {
+      url: `data:${value.mimeType};base64,${Buffer.from(value.data).toString("base64")}`,
+    },
+  };
 }
 
 export function toMessages(
@@ -46,19 +71,27 @@ export function toMessages(
         ? "assistant"
         : "user";
     let content = "";
+    const contentParts: MessageContentPart[] = [];
+    let hasImage = false;
     const calls: NonNullable<Message["tool_calls"]> = [];
+    const appendText = (value: string) => {
+      if (hasImage) contentParts.push({ type: "text", text: value });
+      else content += value;
+    };
     const flush = () => {
-      if (content || calls.length)
+      if (content || contentParts.length || calls.length)
         result.push({
           role,
-          content: content || null,
+          content: hasImage ? [...contentParts] : content || null,
           ...(calls.length ? { tool_calls: [...calls] } : {}),
         });
       content = "";
+      contentParts.length = 0;
+      hasImage = false;
       calls.length = 0;
     };
     for (const part of message.content) {
-      if (part instanceof vscode.LanguageModelTextPart) content += part.value;
+      if (part instanceof vscode.LanguageModelTextPart) appendText(part.value);
       else if (part instanceof vscode.LanguageModelToolCallPart) {
         calls.push({
           id: part.callId,
@@ -72,7 +105,17 @@ export function toMessages(
           tool_call_id: part.callId,
           content: text(part.content),
         });
-      } else throw new Error("Vrata supports text and tool parts only");
+      } else {
+        const image = imagePart(part);
+        if (!image)
+          throw new Error("Vrata supports text, image and tool parts only");
+        if (!hasImage) {
+          if (content) contentParts.push({ type: "text", text: content });
+          content = "";
+          hasImage = true;
+        }
+        contentParts.push(image);
+      }
     }
     flush();
   }
@@ -132,7 +175,6 @@ async function activateWithOutput(
         }
       }
       panel.refresh();
-      panel.maybeAutoRefresh();
     },
   );
   function logError(error: unknown, ...keys: (string | undefined)[]): void {
@@ -171,27 +213,21 @@ async function activateWithOutput(
   function updateStatus(): void {
     const { unavailable } = projectCatalog(credentials.catalog);
     const account = credentials.account;
-    status.text = !credentials.connected
-      ? "$(plug) Врата AI: подключить"
-      : credentials.accountInvalid
-        ? "$(warning) Врата AI: неверный ключ"
-        : account
-          ? `$(key) Врата AI: ${rubles(account.balance.spendable)}${credentials.accountStale ? " (устарело)" : ""}`
-          : credentials.accountUnavailable
-            ? "$(warning) Врата AI: нет связи"
-            : "$(sync~spin) Врата AI: баланс…";
+    if (account && !credentials.accountInvalid) {
+      status.text = `$(key) Врата AI: ${rubles(account.balance.spendable)}`;
+      status.show();
+    } else {
+      status.hide();
+    }
     const tooltip = [
       account && !credentials.accountInvalid
         ? accountTooltip(account)
-        : undefined,
-      credentials.accountStale
-        ? "Данные баланса устарели: обновление не удалось."
         : undefined,
       credentials.accountInvalid
         ? "Ключ недействителен. Замените его."
         : undefined,
       credentials.accountUnavailable && !credentials.accountInvalid
-        ? "Не удалось получить баланс. Обновите его вручную."
+        ? "Не удалось получить баланс. Он обновится после следующего запроса."
         : undefined,
       credentials.catalogUnavailable
         ? "Каталог Врат AI недоступен. Обновите список моделей."
@@ -282,8 +318,14 @@ async function activateWithOutput(
       );
       void vscode.window
         .showInformationMessage(
-          "API-ключ сохранён. Выберите модель Врат AI в меню моделей чата (Chat → Manage Models).",
+          "API-ключ сохранён. Откройте выбор модели и выберите Врата AI.",
+          "Выбрать модель",
         )
+        .then((choice) => {
+          if (choice === "Выбрать модель")
+            return vscode.commands.executeCommand("vrata.openModelPicker");
+          return undefined;
+        })
         .then(undefined, (error) => logError(error, ...keys));
     } finally {
       editing = false;
@@ -309,19 +351,7 @@ async function activateWithOutput(
       }`,
     );
   });
-  command("vrata.refreshBalance", async (keys) => {
-    if (!credentials.connected) return;
-    try {
-      await credentials.loadAccount();
-    } catch (error) {
-      logError(error, ...keys);
-      await showError(
-        error instanceof AccountError && error.status === 401
-          ? "Ключ Врат AI недействителен. Замените его."
-          : "Не удалось обновить баланс Врат AI. Последнее значение помечено как устаревшее.",
-      );
-    }
-  });
+
   command("vrata.copyDiagnostics", async () => {
     await vscode.env.clipboard.writeText(
       diagnosticReport({
@@ -364,7 +394,7 @@ async function activateWithOutput(
       .inspect<string>("byokUtilityModelDefault");
     if (setting?.defaultValue === undefined) {
       return vscode.window.showInformationMessage(
-        "Настройка служебной модели недоступна в этой версии VS Code. Для неё обновите редактор. Подключением Врат AI можно управлять через строку состояния.",
+        "Настройка фоновой модели недоступна в этой версии VS Code. Обновите редактор, чтобы выбрать модель Врат AI для названий чатов и других служебных запросов.",
       );
     }
     return vscode.commands.executeCommand(
@@ -381,22 +411,7 @@ async function activateWithOutput(
             : "Вставить API-ключ",
           command: "vrata.setApiKey",
         },
-        { label: "Выбрать модель", command: "vrata.selectModel" },
-        { label: "Выбрать reasoning level", command: "vrata.selectReasoning" },
         { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
-        ...(credentials.connected
-          ? [
-              { label: "Обновить баланс", command: "vrata.refreshBalance" },
-              {
-                label: "Обновить список моделей",
-                command: "vrata.refreshModels",
-              },
-              { label: "Удалить ключ", command: "vrata.removeApiKey" },
-            ]
-          : []),
-        { label: "Открыть журнал", command: "vrata.showLogs" },
-        { label: "Проверить staging-каталог", command: "vrata.debugStaging" },
-        { label: "Скопировать диагностику", command: "vrata.copyDiagnostics" },
         { label: "Как начать работу", command: "vrata.openWalkthrough" },
       ],
       {
@@ -428,15 +443,6 @@ async function activateWithOutput(
     void showError("Не удалось прочитать ключ Врат AI. Повторите подключение.");
   }
   updateStatus();
-  status.show();
-
-  void vscode.commands
-    .executeCommand(
-      "setContext",
-      "vrata.copilotChatAvailable",
-      vscode.extensions.getExtension("GitHub.copilot-chat") !== undefined,
-    )
-    .then(undefined, (error: unknown) => logError(error));
 
   context.subscriptions.push(
     vscode.lm.registerLanguageModelChatProvider("vrata", {
@@ -458,39 +464,20 @@ async function activateWithOutput(
         }
         if (token.isCancellationRequested) return [];
         const { models } = projectCatalog(credentials.catalog);
-        const routed: vscode.LanguageModelChatInformation[] = models.map(
-          (model) =>
-            credentials.catalogStale
-              ? {
-                  ...model,
-                  detail: "Каталог устарел",
-                  tooltip:
-                    "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
-                }
-              : model,
-        );
-        // A single stable chat entry that always routes to the panel's
-        // chosen model with its reasoning level — pick it once in the chat.
-        const target = panel.modelId ?? "(по умолчанию чата)";
-        routed.push({
-          id: ROUTED_MODEL_ID,
-          name: ROUTED_MODEL_NAME,
-          family: "vrata",
-          version: ROUTED_MODEL_ID,
-          maxInputTokens: Math.max(
-            1,
-            ...routed.map((model) => model.maxInputTokens),
-          ),
-          maxOutputTokens: Math.max(
-            1,
-            ...routed.map((model) => model.maxOutputTokens),
-          ),
-          capabilities: { toolCalling: true, imageInput: false },
-          detail: `→ ${target}${panel.reasoning ? ` · reasoning ${panel.reasoning}` : ""}`,
-          tooltip:
-            "Маршрутизируется расширением на модель из панели «Врата AI» с её reasoning level. Смените модель или reasoning в панели — эта запись следует за выбором.",
-        });
-        return routed;
+        return models.map((model) => ({
+          ...model,
+          // VS Code 1.104 reads this metadata field when grouping provider
+          // models. Keeping it on the returned object moves Vrata out of the
+          // generic "Other Models" bucket without replacing the native chat.
+          category: modelPickerCategory(),
+          ...(credentials.catalogStale
+            ? {
+                detail: "Каталог устарел",
+                tooltip:
+                  "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
+              }
+            : {}),
+        }));
       },
       async provideTokenCount(_model, input) {
         try {
@@ -522,74 +509,106 @@ async function activateWithOutput(
             signal = AbortSignal.any([controller.signal, session.signal]);
             try {
               const catalog = projectCatalog(credentials.catalog);
-              const targetId =
-                model.id === ROUTED_MODEL_ID
-                  ? (panel.modelId ??
-                    fallbackModelId(credentials.catalog) ??
-                    model.id)
-                  : model.id;
-              const messagesTransport =
-                catalog.transports[targetId] === "messages";
+              const targetId = model.id;
+              const transport =
+                catalog.transports[targetId] ?? "chat_completions";
               const effort = resolveReasoning(options, panel.reasoning);
               output.info(
-                `Запрос: модель ${targetId}${model.id === ROUTED_MODEL_ID ? " (маршрут Врата AI)" : ""}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
+                `Запрос: модель ${targetId}, транспорт ${transport}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
-              const requestId = await (
-                messagesTransport ? streamMessages : streamChat
-              )(
-                `${API_ORIGIN}${messagesTransport ? "/v1/messages" : "/v1/chat/completions"}`,
-                session.key,
-                messagesTransport
-                  ? {
-                      model: targetId,
-                      messages: toAnthropicMessages(toMessages(messages)),
-                      max_tokens: model.maxOutputTokens,
-                      ...(options.tools?.length
-                        ? {
-                            tools: options.tools.map((tool) => ({
-                              name: tool.name,
-                              description: tool.description,
-                              input_schema: tool.inputSchema ?? {
-                                type: "object",
-                                properties: {},
-                              },
-                            })),
-                            tool_choice: {
-                              type:
-                                options.toolMode ===
-                                vscode.LanguageModelChatToolMode.Required
-                                  ? "any"
-                                  : "auto",
+              let endpoint = `${API_ORIGIN}/v1/chat/completions`;
+              let stream = streamChat;
+              if (transport === "messages") {
+                endpoint = `${API_ORIGIN}/v1/messages`;
+                stream = streamMessages;
+              } else if (transport === "responses") {
+                endpoint = `${API_ORIGIN}/v1/responses`;
+                stream = streamResponses;
+              }
+              const convertedMessages = toMessages(messages);
+              let requestBody: object;
+              if (transport === "messages") {
+                requestBody = {
+                  model: targetId,
+                  messages: toAnthropicMessages(convertedMessages),
+                  max_tokens: model.maxOutputTokens,
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          name: tool.name,
+                          description: tool.description,
+                          input_schema: tool.inputSchema ?? {
+                            type: "object",
+                            properties: {},
+                          },
+                        })),
+                        tool_choice: {
+                          type:
+                            options.toolMode ===
+                            vscode.LanguageModelChatToolMode.Required
+                              ? "any"
+                              : "auto",
+                        },
+                      }
+                    : {}),
+                };
+              } else if (transport === "responses") {
+                requestBody = {
+                  model: targetId,
+                  input: toResponsesInput(convertedMessages),
+                  max_output_tokens: model.maxOutputTokens,
+                  ...(effort ? { reasoning: { effort } } : {}),
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          type: "function",
+                          name: tool.name,
+                          description: tool.description,
+                          parameters: tool.inputSchema ?? {
+                            type: "object",
+                            properties: {},
+                          },
+                        })),
+                        tool_choice:
+                          options.toolMode ===
+                          vscode.LanguageModelChatToolMode.Required
+                            ? "required"
+                            : "auto",
+                      }
+                    : {}),
+                };
+              } else {
+                requestBody = {
+                  model: targetId,
+                  messages: convertedMessages,
+                  max_tokens: model.maxOutputTokens,
+                  ...chatCompletionsReasoning(effort),
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          type: "function",
+                          function: {
+                            name: tool.name,
+                            description: tool.description,
+                            parameters: tool.inputSchema ?? {
+                              type: "object",
+                              properties: {},
                             },
-                          }
-                        : {}),
-                    }
-                  : {
-                      model: targetId,
-                      messages: toMessages(messages),
-                      max_tokens: model.maxOutputTokens,
-                      ...chatCompletionsReasoning(effort),
-                      ...(options.tools?.length
-                        ? {
-                            tools: options.tools.map((tool) => ({
-                              type: "function",
-                              function: {
-                                name: tool.name,
-                                description: tool.description,
-                                parameters: tool.inputSchema ?? {
-                                  type: "object",
-                                  properties: {},
-                                },
-                              },
-                            })),
-                            tool_choice:
-                              options.toolMode ===
-                              vscode.LanguageModelChatToolMode.Required
-                                ? "required"
-                                : "auto",
-                          }
-                        : {}),
-                    },
+                          },
+                        })),
+                        tool_choice:
+                          options.toolMode ===
+                          vscode.LanguageModelChatToolMode.Required
+                            ? "required"
+                            : "auto",
+                      }
+                    : {}),
+                };
+              }
+              const requestId = await stream(
+                endpoint,
+                session.key,
+                requestBody,
                 signal,
                 (part) => {
                   if (!session.isCurrent() || signal?.aborted) return;
@@ -608,7 +627,7 @@ async function activateWithOutput(
             } finally {
               subscription.dispose();
               if (session.isCurrent())
-                void credentials
+                await credentials
                   .loadAccount()
                   .catch((error) => logError(error, session.key));
             }

@@ -71,7 +71,11 @@ test("normal user scenario never contacts staging", async (t) => {
         error() {},
         show() {},
       }),
-      createStatusBarItem: () => ({ ...disposable, show() {} }),
+      createStatusBarItem: () => ({
+        ...disposable,
+        show() {},
+        hide() {},
+      }),
       registerTreeDataProvider: () => disposable,
       showQuickPick: async () => undefined,
       showInputBox: async () => undefined,
@@ -152,17 +156,20 @@ test("normal user scenario never contacts staging", async (t) => {
   // Full silent user flow: key insert, discovery, response, refreshes.
   vscode.window.showInputBox = async () => "user-key";
   await commands.get("vrata.setApiKey")();
+  await new Promise(setImmediate);
   const treeProvider = context.subscriptions.find(
     (item) => typeof item.getChildren === "function",
   );
   assert.ok(treeProvider, "panel tree provider must be registered");
   const items = await treeProvider.getChildren();
   assert.ok(
-    items.some((item) => item.label.includes("Модель")),
-    "panel shows the model row",
+    !items.some((item) =>
+      /Модель|Reasoning|Обновить|Данные от/.test(item.label),
+    ),
   );
+  assert.ok(!items.some((item) => /лимит ключа/i.test(item.label)));
   await commands.get("vrata.refreshModels")();
-  await commands.get("vrata.refreshBalance")();
+
   assert.ok(
     requests.every((request) =>
       request.url.startsWith("https://api.vrata.tg/"),
