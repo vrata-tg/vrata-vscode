@@ -22,9 +22,11 @@ API-ключ Врата AI: адрес сервиса вводить не тре
 стабильный API провайдера не даёт расширению управлять этим списком напрямую.
 Используются только API провайдера моделей; отдельный webview-чат не создаётся.
 
-Reasoning level, если он сохранён в профиле, передаётся в каждый запрос как
-`modelOptions.reasoningEffort`, а на транспорте Chat Completions — как
-`reasoning_effort` в payload. Настройка не отображается в Activity Bar.
+Reasoning level, если он сохранён в профиле, читается из
+`modelOptions.reasoningEffort`. В payload Chat Completions он передаётся как
+`reasoning_effort`, а в Responses — как `reasoning.effort`. Транспорт Messages
+пока использует серверное значение по умолчанию. Настройка не отображается в
+Activity Bar.
 
 Фактические модель, транспорт и reasoning_effort каждого запроса пишутся
 в журнал **Output → Врата AI**.
@@ -45,7 +47,10 @@ Reasoning level, если он сохранён в профиле, переда�
 [#338](https://github.com/v-lebedev/ai-billing-gateway/issues/338).
 Этот выпуск также добавляет потоковые инструменты [#339](https://github.com/v-lebedev/ai-billing-gateway/issues/339) и баланс [#340](https://github.com/v-lebedev/ai-billing-gateway/issues/340).
 Модель отображается только при подтверждённых лимитах входа и ответа,
-вызове инструментов и транспорте Chat Completions или Messages. Для модели с прямым Messages-маршрутом расширение выбирает `/v1/messages`; при доступе только к OpenAI-виду использует серверное преобразование Chat Completions. Изображения пока не
+вызове инструментов и транспорте Chat Completions, Responses или Messages. Для
+Messages расширение выбирает `/v1/messages`, для Responses — `/v1/responses`, а
+для Chat Completions — `/v1/chat/completions`; каждый маршрут получает свой
+формат сообщений и потокового ответа. Изображения пока не
 объявляются. Причины пропуска моделей видны при наведении на индикатор Врат AI
 в строке состояния. Удалённые или отключённые на сервере модели отсутствуют в
 новом каталоге; устаревший список не позволяет обойти серверные ограничения.

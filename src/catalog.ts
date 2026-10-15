@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 export interface CatalogProjection {
   models: vscode.LanguageModelChatInformation[];
   unavailable: string[];
-  transports: Record<string, "chat_completions" | "messages">;
+  transports: Record<string, "chat_completions" | "messages" | "responses">;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -39,8 +39,9 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
     let reason: string | undefined;
     const transport =
       metadata.protocol === "openai" &&
-      metadata.verified_transport === "chat_completions"
-        ? "chat_completions"
+      (metadata.verified_transport === "chat_completions" ||
+        metadata.verified_transport === "responses")
+        ? metadata.verified_transport
         : metadata.protocol === "anthropic" &&
             metadata.verified_transport === "messages"
           ? "messages"
@@ -66,7 +67,9 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
     }
     if (
       transports[id] === "messages" ||
-      (transports[id] && transport !== "messages")
+      (transports[id] === "responses" && transport !== "messages") ||
+      (transports[id] === "chat_completions" &&
+        transport === "chat_completions")
     )
       continue;
     const model = {

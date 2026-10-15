@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, MessageContentPart, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
+import { streamResponses, toResponsesInput } from "./responses-transport";
 import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
 import { accountTooltip, rubles } from "./account";
@@ -509,68 +510,105 @@ async function activateWithOutput(
             try {
               const catalog = projectCatalog(credentials.catalog);
               const targetId = model.id;
-              const messagesTransport =
-                catalog.transports[targetId] === "messages";
+              const transport =
+                catalog.transports[targetId] ?? "chat_completions";
               const effort = resolveReasoning(options, panel.reasoning);
               output.info(
-                `Запрос: модель ${targetId}, транспорт ${messagesTransport ? "messages" : "chat_completions"}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
+                `Запрос: модель ${targetId}, транспорт ${transport}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
-              const requestId = await (
-                messagesTransport ? streamMessages : streamChat
-              )(
-                `${API_ORIGIN}${messagesTransport ? "/v1/messages" : "/v1/chat/completions"}`,
-                session.key,
-                messagesTransport
-                  ? {
-                      model: targetId,
-                      messages: toAnthropicMessages(toMessages(messages)),
-                      max_tokens: model.maxOutputTokens,
-                      ...(options.tools?.length
-                        ? {
-                            tools: options.tools.map((tool) => ({
-                              name: tool.name,
-                              description: tool.description,
-                              input_schema: tool.inputSchema ?? {
-                                type: "object",
-                                properties: {},
-                              },
-                            })),
-                            tool_choice: {
-                              type:
-                                options.toolMode ===
-                                vscode.LanguageModelChatToolMode.Required
-                                  ? "any"
-                                  : "auto",
+              let endpoint = `${API_ORIGIN}/v1/chat/completions`;
+              let stream = streamChat;
+              if (transport === "messages") {
+                endpoint = `${API_ORIGIN}/v1/messages`;
+                stream = streamMessages;
+              } else if (transport === "responses") {
+                endpoint = `${API_ORIGIN}/v1/responses`;
+                stream = streamResponses;
+              }
+              const convertedMessages = toMessages(messages);
+              let requestBody: object;
+              if (transport === "messages") {
+                requestBody = {
+                  model: targetId,
+                  messages: toAnthropicMessages(convertedMessages),
+                  max_tokens: model.maxOutputTokens,
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          name: tool.name,
+                          description: tool.description,
+                          input_schema: tool.inputSchema ?? {
+                            type: "object",
+                            properties: {},
+                          },
+                        })),
+                        tool_choice: {
+                          type:
+                            options.toolMode ===
+                            vscode.LanguageModelChatToolMode.Required
+                              ? "any"
+                              : "auto",
+                        },
+                      }
+                    : {}),
+                };
+              } else if (transport === "responses") {
+                requestBody = {
+                  model: targetId,
+                  input: toResponsesInput(convertedMessages),
+                  max_output_tokens: model.maxOutputTokens,
+                  ...(effort ? { reasoning: { effort } } : {}),
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          type: "function",
+                          name: tool.name,
+                          description: tool.description,
+                          parameters: tool.inputSchema ?? {
+                            type: "object",
+                            properties: {},
+                          },
+                        })),
+                        tool_choice:
+                          options.toolMode ===
+                          vscode.LanguageModelChatToolMode.Required
+                            ? "required"
+                            : "auto",
+                      }
+                    : {}),
+                };
+              } else {
+                requestBody = {
+                  model: targetId,
+                  messages: convertedMessages,
+                  max_tokens: model.maxOutputTokens,
+                  ...chatCompletionsReasoning(effort),
+                  ...(options.tools?.length
+                    ? {
+                        tools: options.tools.map((tool) => ({
+                          type: "function",
+                          function: {
+                            name: tool.name,
+                            description: tool.description,
+                            parameters: tool.inputSchema ?? {
+                              type: "object",
+                              properties: {},
                             },
-                          }
-                        : {}),
-                    }
-                  : {
-                      model: targetId,
-                      messages: toMessages(messages),
-                      max_tokens: model.maxOutputTokens,
-                      ...chatCompletionsReasoning(effort),
-                      ...(options.tools?.length
-                        ? {
-                            tools: options.tools.map((tool) => ({
-                              type: "function",
-                              function: {
-                                name: tool.name,
-                                description: tool.description,
-                                parameters: tool.inputSchema ?? {
-                                  type: "object",
-                                  properties: {},
-                                },
-                              },
-                            })),
-                            tool_choice:
-                              options.toolMode ===
-                              vscode.LanguageModelChatToolMode.Required
-                                ? "required"
-                                : "auto",
-                          }
-                        : {}),
-                    },
+                          },
+                        })),
+                        tool_choice:
+                          options.toolMode ===
+                          vscode.LanguageModelChatToolMode.Required
+                            ? "required"
+                            : "auto",
+                      }
+                    : {}),
+                };
+              }
+              const requestId = await stream(
+                endpoint,
+                session.key,
+                requestBody,
                 signal,
                 (part) => {
                   if (!session.isCurrent() || signal?.aborted) return;

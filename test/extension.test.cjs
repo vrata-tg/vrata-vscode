@@ -265,9 +265,15 @@ test("native commands, masked input, silent discovery and secret events", async 
   );
   const originalFetch = global.fetch;
   let directMessages = false;
+  let directResponses = false;
   global.fetch = async (url, options) => {
     requests.push({ url, options });
     if (fetchFailure) throw fetchFailure;
+    if (options.method === "POST" && url.endsWith("/v1/responses"))
+      return new Response(
+        'data: {"type":"response.output_text.delta","delta":"ready"}\n\n' +
+          'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+      );
     if (options.method === "POST" && url.endsWith("/v1/chat/completions"))
       return new Response(
         'data: {"choices":[{"delta":{"content":"ready"}}]}\n\n' +
@@ -301,6 +307,28 @@ test("native commands, masked input, silent discovery and secret events", async 
             limit: null,
             remaining: null,
           },
+        }),
+      );
+    if (directResponses)
+      return new Response(
+        JSON.stringify({
+          data: options.headers["Anthropic-Version"]
+            ? []
+            : [
+                {
+                  id: "gpt-6-astra",
+                  gateway_metadata: {
+                    name: "gpt-6-astra",
+                    family: "gpt",
+                    protocol: "openai",
+                    max_input_tokens: 1050000,
+                    max_output_tokens: 128000,
+                    supports_tools: true,
+                    supports_images: true,
+                    verified_transport: "responses",
+                  },
+                },
+              ],
         }),
       );
     if (directMessages)
@@ -730,8 +758,40 @@ test("native commands, masked input, silent discovery and secret events", async 
       },
     },
   ]);
+  directMessages = false;
+  directResponses = true;
+  await commands.get("vrata.refreshModels")();
+  const [responsesModel] = await provider.provideLanguageModelChatInformation(
+    { silent: true },
+    {},
+  );
+  const responsesParts = [];
+  await provider.provideLanguageModelChatResponse(
+    responsesModel,
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    { modelOptions: { reasoningEffort: "high" } },
+    { report: (part) => responsesParts.push(part.value) },
+    token,
+  );
+  assert.deepEqual(responsesParts, ["ready"]);
+  const responsesRequest = requests.findLast(
+    (request) => request.options.method === "POST",
+  );
+  assert.match(responsesRequest.url, /\/v1\/responses$/);
+  assert.deepEqual(JSON.parse(responsesRequest.options.body), {
+    model: "gpt-6-astra",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "hello" }],
+      },
+    ],
+    max_output_tokens: 128000,
+    reasoning: { effort: "high" },
+    stream: true,
+  });
   await commands.get("vrata.copyDiagnostics")();
-  assert.match(copied, /Модель: claude-fable-5/);
+  assert.match(copied, /Модель: gpt-6-astra/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
   await commands.get("vrata.removeApiKey")();
   await assert.rejects(
