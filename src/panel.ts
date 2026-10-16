@@ -220,14 +220,18 @@ export async function pickReasoning(panel: VrataPanel): Promise<void> {
 }
 
 /** Opens the editor's built-in chat view. Never types into the input. */
-export async function openChat(): Promise<void> {
+export async function openChat(modelSelector?: {
+  vendor: string;
+}): Promise<void> {
   let failure: unknown;
   for (const command of [
     "workbench.action.chat.open",
     "workbench.panel.chat.view.copilot",
   ]) {
     try {
-      await vscode.commands.executeCommand(command);
+      if (modelSelector)
+        await vscode.commands.executeCommand(command, { modelSelector });
+      else await vscode.commands.executeCommand(command);
       return;
     } catch (error) {
       failure = error;
@@ -237,9 +241,9 @@ export async function openChat(): Promise<void> {
   throw new Error("Встроенный чат недоступен в этой версии редактора.");
 }
 
-/** Opens the native chat model picker without submitting a chat message. */
+/** Opens the native chat model picker on the Vrata AI provider. */
 export async function openModelPicker(): Promise<void> {
-  await openChat();
+  await openChat({ vendor: "vrata" });
   await vscode.commands.executeCommand("workbench.action.chat.openModelPicker");
 }
 

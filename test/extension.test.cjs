@@ -504,6 +504,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     "workbench.action.chat.open",
     "workbench.action.chat.openModelPicker",
   ]);
+  assert.deepEqual(
+    executed.filter(([id]) => id === "workbench.action.chat.open").at(-1),
+    ["workbench.action.chat.open", { modelSelector: { vendor: "vrata" } }],
+    "Walkthrough opens the picker on the Vrata AI provider",
+  );
   assert.equal(statusShown, true, "healthy connection shows the balance");
   await commands.get("vrata.manage")();
   assert.deepEqual(quickPickItems.at(-1), [

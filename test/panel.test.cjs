@@ -475,8 +475,8 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   // 12. The conversion action opens the chat and invokes its native model picker.
   executed.length = 0;
   await commands.get("vrata.openModelPicker")();
-  assert.deepEqual(
-    executed.map(([id]) => id),
-    ["workbench.action.chat.open", "workbench.action.chat.openModelPicker"],
-  );
+  assert.deepEqual(executed, [
+    ["workbench.action.chat.open", { modelSelector: { vendor: "vrata" } }],
+    ["workbench.action.chat.openModelPicker"],
+  ]);
 });
