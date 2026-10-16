@@ -385,7 +385,7 @@ async function activateWithOutput(
   command("vrata.openWalkthrough", () =>
     vscode.commands.executeCommand(
       "workbench.action.openWalkthrough",
-      "vrata.vrata-ai#vrata.welcome",
+      `${context.extension.id}#vrata.welcome`,
       false,
     ),
   );
@@ -660,7 +660,11 @@ async function activateWithOutput(
     logError(error);
   }
   if (!context.globalState.get<boolean>("welcomeShown")) {
-    await vscode.commands.executeCommand("vrata.openWalkthrough");
     await context.globalState.update("welcomeShown", true);
+    setTimeout(() => {
+      void vscode.commands
+        .executeCommand("vrata.openWalkthrough")
+        .then(undefined, (error) => logError(error));
+    }, 0);
   }
 }

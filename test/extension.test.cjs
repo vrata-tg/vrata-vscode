@@ -43,7 +43,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   const globalValues = new Map([["welcomeShown", true]]);
   const disposable = { dispose() {} };
   const context = {
-    extension: { packageJSON: { version: "0.1.6" } },
+    extension: { id: "vrata.vrata-ai", packageJSON: { version: "0.1.6" } },
     subscriptions: [],
     globalState: {
       get: (key) => globalValues.get(key),
@@ -401,6 +401,13 @@ test("native commands, masked input, silent discovery and secret events", async 
     "activation must finish while the keyring error notification is open",
   );
   assert.ok(provider, "provider must be available before dismissing the error");
+  executed.length = 0;
+  await commands.get("vrata.openWalkthrough")();
+  assert.deepEqual(executed.at(-1), [
+    "workbench.action.openWalkthrough",
+    "vrata.vrata-ai#vrata.welcome",
+    false,
+  ]);
   assert.equal(contextValues.get("vrata.modelPickerTabs"), false);
   assert.equal(statusShown, false);
   assert.ok(statusHidden > 0, "missing account hides the status item");
