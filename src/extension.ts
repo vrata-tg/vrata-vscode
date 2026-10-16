@@ -21,6 +21,7 @@ import {
 } from "./gateway";
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
+import { modelPickerTabsEnabled } from "./welcome";
 
 const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
 
@@ -648,6 +649,16 @@ async function activateWithOutput(
       },
     }),
   );
+  try {
+    const chatConfiguration = vscode.workspace.getConfiguration("chat");
+    await vscode.commands.executeCommand(
+      "setContext",
+      "vrata.modelPickerTabs",
+      modelPickerTabsEnabled(vscode.version, chatConfiguration),
+    );
+  } catch (error) {
+    logError(error);
+  }
   if (!context.globalState.get<boolean>("welcomeShown")) {
     await vscode.commands.executeCommand("vrata.openWalkthrough");
     await context.globalState.update("welcomeShown", true);

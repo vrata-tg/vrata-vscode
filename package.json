@@ -166,16 +166,26 @@
             "title": "Вставьте API-ключ",
             "description": "Проверка ключа бесплатна: расширение только читает доступный каталог. Ключ хранится в защищённом хранилище VS Code.\n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
             "media": {
-              "markdown": "media/connect.md"
+              "markdown": "media/connect-key.md"
             },
             "completionEvents": [
               "onContext:vrata.connected"
             ]
           },
           {
-            "id": "model",
-            "title": "Найдите Врата AI в Other Models",
-            "description": "В штатном выборе модели откройте раздел `Other Models` и выберите провайдера `Врата AI`. Затем VS Code запомнит выбор для следующих чатов.\n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "id": "model-legacy",
+            "title": "Выберите модель Врата AI",
+            "description": "В старом выборе модели откройте раздел `Other Models` и выберите провайдера `Врата AI`. Затем VS Code запомнит выбор для следующих чатов.\n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "when": "!vrata.modelPickerTabs",
+            "media": {
+              "markdown": "media/connect-legacy.md"
+            }
+          },
+          {
+            "id": "model-tabs",
+            "title": "Выберите модель Врата AI",
+            "description": "В новом выборе модели откройте вкладку `Врата AI` и выберите нужную модель. VS Code запомнит выбор для следующих чатов.\n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "when": "vrata.modelPickerTabs",
             "media": {
               "markdown": "media/connect.md"
             }

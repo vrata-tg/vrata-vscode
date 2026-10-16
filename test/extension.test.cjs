@@ -16,6 +16,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   let statusItem;
   const executed = [];
   let utilitySettingAvailable = false;
+  const contextValues = new Map();
   const values = new Map();
   const errors = [],
     notices = [],
@@ -103,10 +104,13 @@ test("native commands, masked input, silent discovery and secret events", async 
     },
     workspace: {
       getConfiguration: () => ({
-        inspect: () =>
-          utilitySettingAvailable
-            ? { defaultValue: "default" }
-            : { key: "chat.byokUtilityModelDefault", defaultValue: undefined },
+        inspect: (setting) =>
+          setting === "byokUtilityModelDefault"
+            ? utilitySettingAvailable
+              ? { defaultValue: "default" }
+              : { key: setting, defaultValue: undefined }
+            : undefined,
+        get: () => undefined,
       }),
     },
     EventEmitter: class {
@@ -201,6 +205,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       executeCommand: async (id, ...args) => {
         executed.push([id, ...args]);
         if (id === "setContext" && contextFailure) throw contextFailure;
+        if (id === "setContext") contextValues.set(args[0], args[1]);
         return commands.get(id)?.(...args);
       },
     },
@@ -396,6 +401,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     "activation must finish while the keyring error notification is open",
   );
   assert.ok(provider, "provider must be available before dismissing the error");
+  assert.equal(contextValues.get("vrata.modelPickerTabs"), false);
   assert.equal(statusShown, false);
   assert.ok(statusHidden > 0, "missing account hides the status item");
   assert.equal(logShown, 0);
