@@ -382,13 +382,22 @@ async function activateWithOutput(
     ),
     vscode.window.registerTreeDataProvider("vrata.panel", panel),
   );
-  command("vrata.openWalkthrough", () =>
-    vscode.commands.executeCommand(
-      "workbench.action.openWalkthrough",
-      `${context.extension.id}#vrata.welcome`,
-      false,
-    ),
-  );
+  function openWalkthrough(): Thenable<unknown> {
+    const open = () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        `${context.extension.id}#vrata.welcome`,
+        false,
+      );
+    const result = open();
+    for (const delay of [250, 1000]) {
+      setTimeout(() => {
+        void open().then(undefined, (error) => logError(error));
+      }, delay);
+    }
+    return result;
+  }
+  command("vrata.openWalkthrough", () => openWalkthrough());
   command("vrata.utilitySettings", () => {
     const setting = vscode.workspace
       .getConfiguration("chat")
@@ -662,9 +671,7 @@ async function activateWithOutput(
   if (!context.globalState.get<boolean>("welcomeShown")) {
     await context.globalState.update("welcomeShown", true);
     setTimeout(() => {
-      void vscode.commands
-        .executeCommand("vrata.openWalkthrough")
-        .then(undefined, (error) => logError(error));
+      void openWalkthrough().then(undefined, (error) => logError(error));
     }, 0);
   }
 }
