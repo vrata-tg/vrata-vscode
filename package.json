@@ -2,7 +2,7 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -175,7 +175,6 @@
           {
             "id": "model",
             "title": "Найдите Врата AI в Other Models",
-            "description": "В штатном выборе модели откройте раздел `Other Models` и выберите провайдера `Врата AI`. Затем VS Code запомнит выбор для следующих чатов.\n[Открыть выбор модели](command:vrata.openModelPicker)",
             "media": {
               "markdown": "media/connect.md"
             }
