@@ -2,7 +2,8 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.36",
+  "icon": "media/vrata-extension.png",
+  "version": "0.1.37",
   "publisher": "vrata",
   "private": true,
   "engines": {
