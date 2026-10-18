@@ -3,7 +3,7 @@
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
   "icon": "media/vrata-extension.png",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -165,7 +165,7 @@
           {
             "id": "key",
             "title": "Вставьте API-ключ",
-            "description": "\n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
+            "description": " \n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
             "media": {
               "markdown": "media/connect-key.md"
             },
@@ -176,7 +176,7 @@
           {
             "id": "model-legacy",
             "title": "Найдите Врата AI в Other Models",
-            "description": "\n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
             "when": "!vrata.modelPickerTabs",
             "media": {
               "markdown": "media/connect-legacy.md"
@@ -185,7 +185,7 @@
           {
             "id": "model-tabs",
             "title": "Выберите модель Врата AI",
-            "description": "\n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
             "when": "vrata.modelPickerTabs",
             "media": {
               "markdown": "media/connect-tabs.md"
@@ -194,7 +194,7 @@
           {
             "id": "utility",
             "title": "Для чего нужна служебная модель",
-            "description": "\n[Настроить служебную модель](command:vrata.utilitySettings)",
+            "description": " \n[Настроить служебную модель](command:vrata.utilitySettings)",
             "media": {
               "markdown": "media/utility.md"
             }
