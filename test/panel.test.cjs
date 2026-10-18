@@ -74,6 +74,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       static parse(value) {
         return { toString: () => value };
       }
+      static joinPath(base, ...parts) {
+        return { toString: () => [base.toString(), ...parts].join("/") };
+      }
     },
     workspace: {
       getConfiguration: () => ({
