@@ -30,6 +30,24 @@ provides direct entry prompts.
   generated `dist/`, dependencies and VSIX files out of git.
 - Keep runtime dependencies empty. Exclude development files from the VSIX.
 
+## Versioning
+
+- Treat `package.json` `version` as the single source of truth for the extension
+  version. Keep the root and `packages[""].version` values in `package-lock.json`,
+  the current VSIX filename in `README.md`, and the release tag `v<version>` in
+  sync. Never reuse an existing version or release tag.
+- Derive the HTTP identity from that same value: `src/user-agent.ts` must build
+  exactly `vrata-vscode/<package.json.version>`. All gateway and model transport
+  requests must use the shared `USER_AGENT`; do not hardcode a version or fall
+  back to the runtime default `node` User-Agent.
+- A release version bump must update `package.json`, `package-lock.json` and the
+  current VSIX reference in `README.md`, then run `npm run check` and
+  `npm run package`. Tests must derive the expected User-Agent from
+  `package.json` and verify it on every outbound transport family.
+- Publish the commit, tag and VSIX with the same version. Verify that the remote
+  branch and tag resolve to the release commit and that the release asset name
+  is `vrata-ai-<version>.vsix`.
+
 ## Delivery
 
 Review the whole PR diff and run the relevant host compatibility checks when
