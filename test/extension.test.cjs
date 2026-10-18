@@ -198,6 +198,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       showWarningMessage: async (_message, _options, action) => action,
     },
     commands: {
+      getCommands: async () => [],
       registerCommand: (id, action) => {
         commands.set(id, action);
         return disposable;
