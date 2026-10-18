@@ -506,8 +506,11 @@ test("native commands, masked input, silent discovery and secret events", async 
   ]);
   assert.deepEqual(
     executed.filter(([id]) => id === "workbench.action.chat.open").at(-1),
-    ["workbench.action.chat.open", { modelSelector: { vendor: "vrata" } }],
-    "Walkthrough opens the picker on the Vrata AI provider",
+    [
+      "workbench.action.chat.open",
+      { modelSelector: { vendor: "vrata", id: "gpt-5.6-terra" } },
+    ],
+    "Walkthrough opens the picker on a concrete Vrata AI model",
   );
   assert.equal(statusShown, true, "healthy connection shows the balance");
   await commands.get("vrata.manage")();

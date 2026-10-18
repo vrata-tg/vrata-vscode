@@ -222,6 +222,7 @@ export async function pickReasoning(panel: VrataPanel): Promise<void> {
 /** Opens the editor's built-in chat view. Never types into the input. */
 export async function openChat(modelSelector?: {
   vendor: string;
+  id?: string;
 }): Promise<void> {
   let failure: unknown;
   for (const command of [
@@ -242,8 +243,8 @@ export async function openChat(modelSelector?: {
 }
 
 /** Opens the native chat model picker on the Vrata AI provider. */
-export async function openModelPicker(): Promise<void> {
-  await openChat({ vendor: "vrata" });
+export async function openModelPicker(modelId?: string): Promise<void> {
+  await openChat({ vendor: "vrata", ...(modelId ? { id: modelId } : {}) });
   await vscode.commands.executeCommand("workbench.action.chat.openModelPicker");
 }
 
@@ -268,7 +269,12 @@ export function registerPanelCommands(
     }),
     vscode.commands.registerCommand("vrata.openModelPicker", async () => {
       try {
-        await openModelPicker();
+        const models = catalog();
+        // The tabbed picker derives its initial provider tab from the selected model.
+        const modelId =
+          models.find((model) => model.id === panel.modelId)?.id ??
+          models[0]?.id;
+        await openModelPicker(modelId);
       } catch (error) {
         panel.report(error);
       }
