@@ -25,6 +25,15 @@ import { modelPickerTabsEnabled } from "./welcome";
 
 const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
 
+// Custom vector icon of the provider tab in the chat model picker, shared with
+// the Activity bar entry. Editor versions without category icons ignore it.
+function providerIconPath(extensionUri: vscode.Uri): vscode.Uri | undefined {
+  const minor = Number(vscode.version.split(".")[1] ?? 0);
+  return minor >= 106
+    ? vscode.Uri.joinPath(extensionUri, "media", "vrata.svg")
+    : undefined;
+}
+
 function modelPickerCategory(): string | { label: string; order: number } {
   // VS Code 1.126 changed the provider metadata shape from an ordered object
   // to a plain string. Keep the old shape for the minimum supported editor.
@@ -474,12 +483,16 @@ async function activateWithOutput(
         }
         if (token.isCancellationRequested) return [];
         const { models } = projectCatalog(credentials.catalog);
+        const icon = providerIconPath(context.extensionUri);
         return models.map((model) => ({
           ...model,
           // VS Code 1.104 reads this metadata field when grouping provider
           // models. Keeping it on the returned object moves Vrata out of the
           // generic "Other Models" bucket without replacing the native chat.
           category: modelPickerCategory(),
+          // VS Code 1.106 added a category icon for provider tabs in the
+          // model picker. Older editors ignore the field, so keep it last.
+          ...(icon ? { icon } : {}),
           ...(credentials.catalogStale
             ? {
                 detail: "Каталог устарел",
