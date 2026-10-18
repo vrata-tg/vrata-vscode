@@ -16,6 +16,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   let statusItem;
   const executed = [];
   let utilitySettingAvailable = false;
+  const contextValues = new Map();
   const values = new Map();
   const errors = [],
     notices = [],
@@ -42,7 +43,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   const globalValues = new Map([["welcomeShown", true]]);
   const disposable = { dispose() {} };
   const context = {
-    extension: { packageJSON: { version: "0.1.6" } },
+    extension: { id: "vrata.vrata-ai", packageJSON: { version: "0.1.6" } },
     subscriptions: [],
     globalState: {
       get: (key) => globalValues.get(key),
@@ -103,10 +104,13 @@ test("native commands, masked input, silent discovery and secret events", async 
     },
     workspace: {
       getConfiguration: () => ({
-        inspect: () =>
-          utilitySettingAvailable
-            ? { defaultValue: "default" }
-            : { key: "chat.byokUtilityModelDefault", defaultValue: undefined },
+        inspect: (setting) =>
+          setting === "byokUtilityModelDefault"
+            ? utilitySettingAvailable
+              ? { defaultValue: "default" }
+              : { key: setting, defaultValue: undefined }
+            : undefined,
+        get: () => undefined,
       }),
     },
     EventEmitter: class {
@@ -201,6 +205,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       executeCommand: async (id, ...args) => {
         executed.push([id, ...args]);
         if (id === "setContext" && contextFailure) throw contextFailure;
+        if (id === "setContext") contextValues.set(args[0], args[1]);
         return commands.get(id)?.(...args);
       },
     },
@@ -396,6 +401,14 @@ test("native commands, masked input, silent discovery and secret events", async 
     "activation must finish while the keyring error notification is open",
   );
   assert.ok(provider, "provider must be available before dismissing the error");
+  assert.equal(contextValues.get("vrata.modelPickerTabs"), false);
+  executed.length = 0;
+  await commands.get("vrata.openWalkthrough")();
+  assert.deepEqual(executed.at(-1), [
+    "workbench.action.openWalkthrough",
+    "vrata.vrata-ai#vrata.welcome",
+    false,
+  ]);
   assert.equal(statusShown, false);
   assert.ok(statusHidden > 0, "missing account hides the status item");
   assert.equal(logShown, 0);
@@ -491,6 +504,14 @@ test("native commands, masked input, silent discovery and secret events", async 
     "workbench.action.chat.open",
     "workbench.action.chat.openModelPicker",
   ]);
+  assert.deepEqual(
+    executed.filter(([id]) => id === "workbench.action.chat.open").at(-1),
+    [
+      "workbench.action.chat.open",
+      { modelSelector: { vendor: "vrata", id: "gpt-5.6-terra" } },
+    ],
+    "Walkthrough opens the picker on a concrete Vrata AI model",
+  );
   assert.equal(statusShown, true, "healthy connection shows the balance");
   await commands.get("vrata.manage")();
   assert.deepEqual(quickPickItems.at(-1), [

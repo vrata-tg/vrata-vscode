@@ -2,6 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const { streamChat } = require("../dist/transport");
+const userAgent = `vrata-vscode/${require("../package.json").version}`;
 async function server(t, handler) {
   const s = http.createServer(handler);
   await new Promise((resolve) => s.listen(0, "127.0.0.1", resolve));
@@ -19,6 +20,7 @@ const request = {
 test("streams split UTF-8 text and interleaved tool arguments exactly once", async (t) => {
   const url = await server(t, (req, res) => {
     assert.equal(req.headers.authorization, "Bearer test");
+    assert.equal(req.headers["user-agent"], userAgent);
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     const events = [
       { choices: [{ delta: { content: "Привет" } }] },

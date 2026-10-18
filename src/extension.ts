@@ -21,8 +21,18 @@ import {
 } from "./gateway";
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
+import { modelPickerTabsEnabled } from "./welcome";
 
 const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
+
+// Custom vector icon of the provider tab in the chat model picker, shared with
+// the Activity bar entry. Editor versions without category icons ignore it.
+function providerIconPath(extensionUri: vscode.Uri): vscode.Uri | undefined {
+  const minor = Number(vscode.version.split(".")[1] ?? 0);
+  return minor >= 106
+    ? vscode.Uri.joinPath(extensionUri, "media", "vrata.svg")
+    : undefined;
+}
 
 function modelPickerCategory(): string | { label: string; order: number } {
   // VS Code 1.126 changed the provider metadata shape from an ordered object
@@ -381,13 +391,22 @@ async function activateWithOutput(
     ),
     vscode.window.registerTreeDataProvider("vrata.panel", panel),
   );
-  command("vrata.openWalkthrough", () =>
-    vscode.commands.executeCommand(
-      "workbench.action.openWalkthrough",
-      "vrata.vrata-ai#vrata.welcome",
-      false,
-    ),
-  );
+  function openWalkthrough(): Thenable<unknown> {
+    const open = () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        `${context.extension.id}#vrata.welcome`,
+        false,
+      );
+    const result = open();
+    for (const delay of [250, 1000]) {
+      setTimeout(() => {
+        void open().then(undefined, (error) => logError(error));
+      }, delay);
+    }
+    return result;
+  }
+  command("vrata.openWalkthrough", () => openWalkthrough());
   command("vrata.utilitySettings", () => {
     const setting = vscode.workspace
       .getConfiguration("chat")
@@ -464,12 +483,16 @@ async function activateWithOutput(
         }
         if (token.isCancellationRequested) return [];
         const { models } = projectCatalog(credentials.catalog);
+        const icon = providerIconPath(context.extensionUri);
         return models.map((model) => ({
           ...model,
           // VS Code 1.104 reads this metadata field when grouping provider
           // models. Keeping it on the returned object moves Vrata out of the
           // generic "Other Models" bucket without replacing the native chat.
           category: modelPickerCategory(),
+          // VS Code 1.106 added a category icon for provider tabs in the
+          // model picker. Older editors ignore the field, so keep it last.
+          ...(icon ? { icon } : {}),
           ...(credentials.catalogStale
             ? {
                 detail: "Каталог устарел",
@@ -648,8 +671,20 @@ async function activateWithOutput(
       },
     }),
   );
+  try {
+    const chatConfiguration = vscode.workspace.getConfiguration("chat");
+    await vscode.commands.executeCommand(
+      "setContext",
+      "vrata.modelPickerTabs",
+      modelPickerTabsEnabled(vscode.version, chatConfiguration),
+    );
+  } catch (error) {
+    logError(error);
+  }
   if (!context.globalState.get<boolean>("welcomeShown")) {
-    await vscode.commands.executeCommand("vrata.openWalkthrough");
     await context.globalState.update("welcomeShown", true);
+    setTimeout(() => {
+      void openWalkthrough().then(undefined, (error) => logError(error));
+    }, 0);
   }
 }

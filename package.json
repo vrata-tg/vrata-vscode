@@ -2,7 +2,8 @@
   "name": "vrata-ai",
   "displayName": "Врата AI",
   "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
-  "version": "0.1.26",
+  "icon": "media/vrata-extension.png",
+  "version": "0.1.40",
   "publisher": "vrata",
   "private": true,
   "engines": {
@@ -159,31 +160,41 @@
       {
         "id": "vrata.welcome",
         "title": "Врата AI",
-        "description": "Подключите существующий API-ключ. URL и модели вручную вводить не нужно.",
+        "description": "",
         "steps": [
           {
             "id": "key",
             "title": "Вставьте API-ключ",
-            "description": "Проверка ключа бесплатна: расширение только читает доступный каталог. Ключ хранится в защищённом хранилище VS Code.\n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
+            "description": " \n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
             "media": {
-              "markdown": "media/connect.md"
+              "markdown": "media/connect-key.md"
             },
             "completionEvents": [
               "onContext:vrata.connected"
             ]
           },
           {
-            "id": "model",
+            "id": "model-legacy",
             "title": "Найдите Врата AI в Other Models",
-            "description": "В штатном выборе модели откройте раздел `Other Models` и выберите провайдера `Врата AI`. Затем VS Code запомнит выбор для следующих чатов.\n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "when": "!vrata.modelPickerTabs",
             "media": {
-              "markdown": "media/connect.md"
+              "markdown": "media/connect-legacy.md"
+            }
+          },
+          {
+            "id": "model-tabs",
+            "title": "Выберите модель Врата AI",
+            "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "when": "vrata.modelPickerTabs",
+            "media": {
+              "markdown": "media/connect-tabs.md"
             }
           },
           {
             "id": "utility",
             "title": "Для чего нужна служебная модель",
-            "description": "VS Code иногда отправляет фоновые запросы: например, для названия чата и других вспомогательных действий. Они тоже используют модель и могут расходовать баланс Врат AI. Нажмите кнопку ниже и выберите `Main Agent Model` — это значит «использовать выбранную модель основного агента Врата AI», а не отдельный чат или новый ключ.\n[Настроить служебную модель](command:vrata.utilitySettings)",
+            "description": " \n[Настроить служебную модель](command:vrata.utilitySettings)",
             "media": {
               "markdown": "media/utility.md"
             }

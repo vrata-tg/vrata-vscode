@@ -1,3 +1,5 @@
+import { USER_AGENT } from "./user-agent";
+
 export type Part =
   { text: string } | { id: string; name: string; input: object };
 export type TransportCode =
@@ -75,6 +77,7 @@ export async function streamChat(
       redirect: "error",
       headers: {
         Authorization: `Bearer ${key}`,
+        "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ ...body, stream: true }),

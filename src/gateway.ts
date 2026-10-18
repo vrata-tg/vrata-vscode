@@ -1,3 +1,5 @@
+import { USER_AGENT } from "./user-agent";
+
 export const API_ORIGIN = "https://api.vrata.tg";
 export const STAGING_API_ORIGIN =
   "https://llm-billing-staging.ai.vladimirlebe.dev";
@@ -70,6 +72,7 @@ export class GatewayClient {
         method: "GET",
         headers: {
           Authorization: `Bearer ${key}`,
+          "User-Agent": USER_AGENT,
           ...(protocol === "anthropic"
             ? { "Anthropic-Version": "2023-06-01" }
             : {}),
@@ -104,7 +107,10 @@ export class GatewayClient {
     this.log(`GET ${endpoint} — чтение счёта`);
     const response = await this.request(endpoint, {
       method: "GET",
-      headers: { Authorization: `Bearer ${key}` },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "User-Agent": USER_AGENT,
+      },
       redirect: "error",
       signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
     });

@@ -74,6 +74,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       static parse(value) {
         return { toString: () => value };
       }
+      static joinPath(base, ...parts) {
+        return { toString: () => [base.toString(), ...parts].join("/") };
+      }
     },
     workspace: {
       getConfiguration: () => ({
@@ -472,11 +475,18 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     "chat opens with no text injected into the input",
   );
 
-  // 12. The conversion action opens the chat and invokes its native model picker.
+  // 12. The native picker opens on the panel's preferred Vrata model.
+  quickPickQueue.push((pickerItems) =>
+    pickerItems.find((item) => item.label === "claude-haiku-4-5"),
+  );
+  await commands.get("vrata.selectModel")();
   executed.length = 0;
   await commands.get("vrata.openModelPicker")();
-  assert.deepEqual(
-    executed.map(([id]) => id),
-    ["workbench.action.chat.open", "workbench.action.chat.openModelPicker"],
-  );
+  assert.deepEqual(executed, [
+    [
+      "workbench.action.chat.open",
+      { modelSelector: { vendor: "vrata", id: "claude-haiku-4-5" } },
+    ],
+    ["workbench.action.chat.openModelPicker"],
+  ]);
 });
