@@ -5,6 +5,7 @@ const {
   streamMessages,
   toAnthropicMessages,
 } = require("../dist/messages-transport");
+const userAgent = `vrata-vscode/${require("../package.json").version}`;
 
 async function server(t, handler) {
   const service = http.createServer(handler);
@@ -37,6 +38,7 @@ test("Messages runs two tool iterations, merges results and handles split SSE", 
   const url = await server(t, async (req, res) => {
     assert.equal(req.headers["anthropic-version"], "2023-06-01");
     assert.equal(req.headers.authorization, "Bearer test");
+    assert.equal(req.headers["user-agent"], userAgent);
     let raw = "";
     for await (const chunk of req) raw += chunk;
     bodies.push(JSON.parse(raw));

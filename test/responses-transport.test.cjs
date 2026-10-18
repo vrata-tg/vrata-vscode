@@ -5,6 +5,7 @@ const {
   streamResponses,
   toResponsesInput,
 } = require("../dist/responses-transport");
+const userAgent = `vrata-vscode/${require("../package.json").version}`;
 
 async function server(t, handler) {
   const value = http.createServer(handler);
@@ -75,6 +76,7 @@ test("streams Responses text and validated function calls", async (t) => {
   let received;
   const url = await server(t, async (req, res) => {
     assert.equal(req.headers.authorization, "Bearer synthetic");
+    assert.equal(req.headers["user-agent"], userAgent);
     let body = "";
     for await (const chunk of req) body += chunk;
     received = JSON.parse(body);

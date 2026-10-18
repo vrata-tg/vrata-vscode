@@ -8,12 +8,14 @@ const {
 } = require("../dist/gateway");
 const { Credentials } = require("../dist/credentials");
 const { formatError } = require("../dist/diagnostics");
+const userAgent = `vrata-vscode/${require("../package.json").version}`;
 
 test("real HTTP chain validates with GET only; zero balance and empty catalog are valid", async (t) => {
   const calls = [];
   const server = http.createServer((req, res) => {
     calls.push({ method: req.method, path: req.url });
     const key = req.headers.authorization;
+    assert.equal(req.headers["user-agent"], userAgent);
     if (key === "Bearer invalid" || key === "Bearer revoked") {
       res
         .writeHead(401)
@@ -136,6 +138,7 @@ test("account accepts zero balance and rejects malformed amounts", async () => {
   const client = new GatewayClient(async (url, options) => {
     assert.equal(url, `${API_ORIGIN}/v1/account`);
     assert.equal(options.method, "GET");
+    assert.equal(options.headers["User-Agent"], userAgent);
     return new Response(JSON.stringify(value));
   });
   assert.equal(

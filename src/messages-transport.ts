@@ -1,3 +1,5 @@
+import { USER_AGENT } from "./user-agent";
+
 import {
   httpCode,
   Message,
@@ -77,6 +79,7 @@ export async function streamMessages(
       redirect: "error",
       headers: {
         Authorization: `Bearer ${key}`,
+        "User-Agent": USER_AGENT,
         "Anthropic-Version": "2023-06-01",
         "Content-Type": "application/json",
       },

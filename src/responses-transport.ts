@@ -1,3 +1,5 @@
+import { USER_AGENT } from "./user-agent";
+
 import {
   httpCode,
   Message,
@@ -72,6 +74,7 @@ export async function streamResponses(
       redirect: "error",
       headers: {
         Authorization: `Bearer ${key}`,
+        "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ ...body, stream: true }),
