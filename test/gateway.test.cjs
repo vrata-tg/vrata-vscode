@@ -56,7 +56,7 @@ test("real HTTP chain validates with GET only; zero balance and empty catalog ar
     client,
     () => {},
   );
-  await credentials.initialize();
+  await credentials.reload();
   await credentials.replace("zero-balance");
   assert.equal(credentials.connected, true);
   assert.deepEqual(credentials.catalog, []);

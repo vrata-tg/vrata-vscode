@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Run inside dbus-run-session + xvfb-run with a disposable profile/keyring.
 set -euo pipefail
 code_binary="$(realpath "$1")"
 vsix_path="$(realpath "$2")"
@@ -15,7 +14,6 @@ mkdir -p "$XDG_DATA_HOME"
 printf 'synthetic-keyring-password' | gnome-keyring-daemon --unlock --components=secrets >/dev/null
 code_args=(--no-sandbox --disable-gpu --disable-dev-shm-usage
   --user-data-dir "$result_dir/profile" --extensions-dir "$result_dir/extensions")
-# Recent editors share encrypted storage outside user-data-dir unless isolated explicitly.
 if [[ "${VRATA_HOST_VERSION:-}" != 1.104.0 ]]; then
   code_args+=(--shared-data-dir "$result_dir/shared")
 fi

@@ -1,33 +1,20 @@
 # Врата AI для VS Code
 
+Подключает модели Врат AI к штатному чату VS Code. В панели **Врата AI**
+вставьте API-ключ из [бота](https://vrata.tg/bot), затем откройте **Выбрать
+модель в чате**. Ключ хранится в VS Code SecretStorage; неудачная замена
+сохраняет прежнее подключение.
+
 ## Совместимость
 
-Минимум — **VS Code 1.104.0**: в этой версии появился стабильный
-[Language Model Chat Provider API](https://code.visualstudio.com/updates/v1_104#_language-model-chat-provider-api).
-Компиляция использует типы именно 1.104.0, чтобы случайно не добавить API более
-нового редактора. CI устанавливает VSIX и проверяет активацию/SecretStorage
-после перезапуска на **1.104.0, 1.135.0 и 1.138.0** (Linux).
+Минимальная версия — **VS Code 1.104.0**, типы API закреплены на ней.
+CI проверяет установку VSIX, активацию и SecretStorage после перезапуска
+на Linux в **1.104.0, 1.135.0 и 1.138.0**. Windows/macOS и Remote/WSL
+пока не проверены.
 
-## Выпуск новой версии
+## Разработка
 
-Откройте **Actions → Release → Run workflow**, выберите **main** и укажите
-новую стабильную версию без `v`, например `0.1.42`. Workflow обновит версию в
-`package.json`, `package-lock.json` и текущую ссылку на VSIX в README, выполнит
-`npm run check`, соберёт VSIX, создаст коммит и тег `v<версия>`, затем опубликует
-GitHub Release с автоматически сформированными release notes и файлом
-`vrata-ai-<версия>.vsix`. Публикация использует встроенный `GITHUB_TOKEN`.
-
-Версия должна быть выше текущей. Выпуски выполняются последовательно. Если
-публикация прервалась после отправки тега, повторите запуск с той же версией:
-workflow соберёт пакет из исходного тега и завершит черновик релиза. Уже
-опубликованный релиз остаётся без изменений.
-
-Если `main` обновится во время проверок, атомарный push отклонит и коммит,
-и тег. Начните новый запуск с той же версией, чтобы проверить актуальный `main`.
-Правила репозитория должны разрешать GitHub Actions отправлять коммиты версий
-в `main`, создавать теги `v*` и использовать `contents: write`.
-
-## Разработка и проверки
+Нужен Node.js 22:
 
 ```sh
 npm ci
@@ -35,64 +22,42 @@ npm run check
 npm run package
 ```
 
-Для разработки нужен Node.js 22. `npm run check` выполняет проверку типов,
-ESLint, проверку форматирования и тесты. `npm run format` применяет Prettier.
-Нажмите **F5** для запуска Extension Development Host с папкой `fixture`:
-задача `npm: watch` пересобирает TypeScript, доступны точки останова.
+`check` запускает TypeScript, ESLint, Prettier и тесты. `npm run format`
+применяет форматирование. **F5** запускает Extension Development Host
+с папкой `fixture` и TypeScript watch. Процесс разработки — в [AGENTS.md](AGENTS.md).
+Runtime dependencies отсутствуют; исходники, тесты и source maps исключены из VSIX.
 
-Инструкции для агентов — в [AGENTS.md](AGENTS.md); [пакет skills](.agents/README.md) перенесён из основного репозитория
-`ai-billing-gateway`. `vrata-vscode-dev` задаёт маршрут разработки, а planning,
-review, simplification и GitHub workflow используют полные локальные пакеты.
-CI повторяет `check`, собирает VSIX и проверяет его в трёх версиях VS Code.
-Workflow можно запустить вручную; JSON-результаты и логи host tests
-сохраняются и при ошибке.
-
-Пакет TypeScript находится в корне этого репозитория. Stable API, vendor `vrata`,
-extension ID `vrata.vrata-ai`; без proposed API и собственного webview-чата.
-VSIX содержит только manifest, README, walkthrough media и скомпилированный код.
-`@vscode/vsce` — только build dependency; runtime dependencies отсутствуют.
-
-Unit/integration tests покрывают lifecycle, ошибки хранения/проверки, смену
-аккаунта, запоздалые ответы, native UI commands и read-only HTTP через локальный
-сервер, а также оба потоковых транспорта и циклы инструментов.
-
-Для проверки реального SecretStorage и production-активации установите VSIX в
-изолированные каталоги, затем запустите host test дважды с тем же профилем:
-
-```sh
-code --user-data-dir /tmp/vrata-profile --extensions-dir /tmp/vrata-extensions \
-  --install-extension "$PWD/vrata-ai-0.1.6.vsix"
-VRATA_HOST_PHASE=write VRATA_HOST_RESULT=/tmp/vrata-write.json code --user-data-dir /tmp/vrata-profile \
-  --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
-VRATA_HOST_PHASE=read VRATA_HOST_RESULT=/tmp/vrata-read.json code --user-data-dir /tmp/vrata-profile \
-  --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
-```
-
-Не добавляйте `--extensionTestsPath`: VS Code включает для него in-memory storage,
-который не проверяет сохранение после перезапуска. Тестовое расширение запускает
-проверку автоматически и закрывает редактор; проверьте `passed: true` в обоих JSON-файлах результата.
-
-Host test использует только синтетический ключ в SecretStorage тестового
-расширения и loopback HTTP. Реальные credentials и платные запросы не нужны.
-На Linux нужен доступный системный keyring; не используйте plaintext password
-store для настоящего ключа. Windows/macOS и Remote/WSL пока не проверены.
-
-Автоматический Linux-прогон с изолированными profile/keyring (нужны `xvfb`,
-`xauth`, `dbus-x11`, `gnome-keyring`; путь результата должен быть новым):
+Для Linux host tests нужны `xvfb`, `xauth`, `dbus-x11`, `gnome-keyring`
+и распакованный VS Code нужной версии:
 
 ```sh
 VRATA_HOST_VERSION=1.135.0 dbus-run-session -- xvfb-run -a bash test/run-host.sh \
-  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.6.vsix" /tmp/vrata-host-1.135
+  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.41.vsix" /tmp/vrata-host-1.135
 ```
 
-## Диагностика подключения
+Каталог результата должен быть новым. Скрипт использует изолированные
+профиль и keyring, проверяет `passed: true` для фаз записи и чтения после
+перезапуска. Запросы идут только на loopback с синтетическим ключом.
+`--extensionTestsPath` использовать нельзя: он включает in-memory storage.
 
-Нажмите **Открыть журнал** в уведомлении об ошибке или выполните команду
-**Врата AI: Открыть журнал**. Канал **Врата AI** в Output содержит исходную
-ошибку с уровнем **error**: сообщение, стек, `cause`, `AggregateError` и дополнительные
-поля, включая неизвестные коды. Исключения перехватываются на уровне активации,
-команд, событий хранилища и методов провайдера. GatewayClient пропускает их
-наверх без подмены и повторного журналирования. Модельные ошибки классифицируются по HTTP-статусу и безопасным кодам; сырые ответы upstream не попадают в уведомления и журнал.
+## Выпуск
 
-Точные значения доступных обработчику API-ключей (текущего, вводимого и ключа запроса) маскируются как `[REDACTED]`.
-Для ошибок загрузки каталога и хранилища исходный стек сохраняется. Для модельного потока записывается безопасный код, статус и request ID без тела ответа. Команда **Врата AI: Скопировать диагностику** копирует только версии, ID модели, код и request ID. Баланс счёта виден в строке состояния; заданный остаток квоты ключа виден в панели Врата AI и подсказке. Обновление выполняется после подключения и каждого завершившегося запроса без периодического опроса.
+В **Actions → Release → Run workflow** выберите **main** и новую стабильную
+версию без `v`, выше текущей. Workflow обновит версии и имя VSIX в README,
+выполнит проверки, создаст коммит, тег `v<версия>` и GitHub Release
+с `vrata-ai-<версия>.vsix` через `GITHUB_TOKEN`.
+
+Если `main` обновится во время проверок, атомарный push отклонит коммит
+и тег; запустите workflow заново. Прерванную публикацию после push тега
+можно продолжить с той же версией. Опубликованный релиз не изменяется.
+Правила репозитория должны разрешать Actions коммиты в `main`, теги `v*`
+и `contents: write`.
+
+## Диагностика
+
+**Открыть журнал** в уведомлении показывает канал **Врата AI** в Output.
+Ошибки хранилища и каталога сохраняют исходные исключения; ошибки модельных
+запросов — безопасный код, статус и request ID без тела ответа.
+Известные операции API-ключи маскируются как `[REDACTED]`.
+**Скопировать диагностику** копирует только версии, ID модели, код и request ID.
+Баланс обновляется после подключения и завершения запроса.

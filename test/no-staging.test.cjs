@@ -2,8 +2,6 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
 
-// Extension must not touch staging in the normal user scenario: only the
-// explicit vrata.debugStaging command may reach the staging origin.
 test("normal user scenario never contacts staging", async (t) => {
   const requests = [];
   const executed = [];
@@ -153,7 +151,6 @@ test("normal user scenario never contacts staging", async (t) => {
   await extension.activate(context);
   await new Promise(setImmediate);
 
-  // Full silent user flow: key insert, discovery, response, refreshes.
   vscode.window.showInputBox = async () => "user-key";
   await commands.get("vrata.setApiKey")();
   await new Promise(setImmediate);

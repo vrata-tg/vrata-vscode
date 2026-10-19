@@ -59,7 +59,7 @@ function fixture(initial) {
 
 test("account refresh coalesces, keeps stale value, and isolates replacement keys", async () => {
   const f = fixture();
-  await f.credentials.initialize();
+  await f.credentials.reload();
   await f.credentials.replace("old");
   let resolve;
   let reads = 0;
@@ -88,10 +88,9 @@ test("account refresh coalesces, keeps stale value, and isolates replacement key
     throw new Error("offline");
   };
   await assert.rejects(f.credentials.loadAccount());
-  assert.equal(f.credentials.accountStale, true);
+  assert.equal(f.credentials.accountUnavailable, false);
   await f.credentials.replace("new");
   assert.equal(f.credentials.account, undefined);
-  assert.equal(f.credentials.accountStale, false);
   f.client.account = async () => {
     throw new AccountError(401);
   };
@@ -101,14 +100,14 @@ test("account refresh coalesces, keeps stale value, and isolates replacement key
 
 test("trim, validate read-only, persist and restore arbitrary-format key", async () => {
   const f = fixture();
-  await f.credentials.initialize();
+  await f.credentials.reload();
   assert.equal(f.credentials.connected, false);
   await f.credentials.replace("  arbitrary key  ");
   assert.equal(f.values.get(SECRET_KEY), "arbitrary key");
   assert.deepEqual(f.reads, ["arbitrary key"]);
   assert.deepEqual(f.credentials.catalog, [{ id: "arbitrary key" }]);
   const restarted = new Credentials(f.secrets, f.client, () => {});
-  await restarted.initialize();
+  await restarted.reload();
   assert.equal(restarted.connected, true);
   await restarted.loadCatalog();
   assert.deepEqual(restarted.catalog, f.credentials.catalog);
@@ -116,7 +115,7 @@ test("trim, validate read-only, persist and restore arbitrary-format key", async
 
 test("empty, invalid, revoked and failed storage preserve previous session", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   await f.credentials.loadCatalog();
   for (const value of ["  ", "invalid", "revoked"]) {
     await assert.rejects(f.credentials.replace(value));
@@ -131,13 +130,12 @@ test("empty, invalid, revoked and failed storage preserve previous session", asy
   assert.deepEqual(f.credentials.catalog, [{ id: "old" }]);
 });
 
-test("replacement aborts old requests, clears account cache and rejects late responses", async () => {
+test("replacement aborts old requests, rejects late responses", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let complete, signal;
   const old = f.credentials.run(async (session) => {
     signal = session.signal;
-    session.cache.set("balance", "old balance");
     await new Promise((resolve) => {
       complete = resolve;
     });
@@ -148,7 +146,6 @@ test("replacement aborts old requests, clears account cache and rejects late res
   complete();
   await assert.rejects(old);
   await f.credentials.run(async (session) => {
-    assert.equal(session.cache.size, 0);
     assert.equal(session.key, "new");
   });
   assert.deepEqual(f.credentials.catalog, [{ id: "new" }]);
@@ -156,7 +153,7 @@ test("replacement aborts old requests, clears account cache and rejects late res
 
 test("deletion wins over pending validation and never revokes server key", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let complete;
   f.client.models = async () =>
     new Promise((resolve) => {
@@ -176,7 +173,7 @@ test("deletion wins over pending validation and never revokes server key", async
 
 test("external SecretStorage changes invalidate the current account", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let signal;
   await f.credentials.run(async (session) => {
     signal = session.signal;
@@ -194,7 +191,7 @@ test("external SecretStorage changes invalidate the current account", async () =
 
 test("late old catalog cannot overwrite the replacement account", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let complete;
   f.client.models = async (key) =>
     key === "old"
@@ -211,7 +208,7 @@ test("late old catalog cannot overwrite the replacement account", async () => {
 
 test("latest validation wins even if an aborted request completes late", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let complete;
   f.client.models = async (key) =>
     key === "slow"
@@ -229,7 +226,7 @@ test("latest validation wins even if an aborted request completes late", async (
 
 test("failed deletion preserves the current working session", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   f.secrets.delete = async () => {
     throw Error("storage unavailable");
   };
@@ -243,7 +240,7 @@ test("failed deletion preserves the current working session", async () => {
 
 test("delete during a pending store must not report replacement success", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let finishStore, enteredStore;
   const started = new Promise((resolve) => {
     enteredStore = resolve;
@@ -280,7 +277,7 @@ test("discovery reuses a validated empty catalog without checking the key again"
 
 test("restored sessions share loading and back off after a failed request", async () => {
   const f = fixture("saved");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let reject, resolve;
   f.client.models = (key) => {
     f.reads.push(key);
@@ -348,7 +345,7 @@ test("TTL refresh marks only the same key's old catalog stale after failure", as
 
 test("disposal during deletion does not notify disposed subscribers", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let finishDelete;
   f.secrets.delete = () =>
     new Promise((resolve) => {
@@ -366,7 +363,7 @@ test("disposal during deletion does not notify disposed subscribers", async () =
 
 test("disposal cancels a queued deletion before touching SecretStorage", async () => {
   const f = fixture("old");
-  await f.credentials.initialize();
+  await f.credentials.reload();
   let finishRead;
   f.secrets.get = () =>
     new Promise((resolve) => {

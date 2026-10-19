@@ -3,7 +3,6 @@ dist/
 *.vsix
 package-lock.json
 
-# Preserve vendored skill resources; see .agents/VENDORED.md.
 .agents/skills/ce-plan/
 .agents/skills/ce-doc-review/
 .agents/skills/hardening-menu/

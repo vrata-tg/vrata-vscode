@@ -50,7 +50,6 @@ jobs:
           fi
 
           if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            # Resume a release after its commit/tag were already pushed.
             git merge-base --is-ancestor "$RELEASE_TAG" origin/main
             git checkout --detach "$RELEASE_TAG"
             node -e 'if (require("./package.json").version !== process.env.RELEASE_VERSION) process.exit(1)'
@@ -66,6 +65,7 @@ jobs:
           }
           NODE
             npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+            node -e 'const fs = require("node:fs"); fs.writeFileSync("README.md", fs.readFileSync("README.md", "utf8").replace(/vrata-ai-\d+\.\d+\.\d+\.vsix/g, `vrata-ai-${process.env.RELEASE_VERSION}.vsix`))'
             echo 'existing=false' >> "$GITHUB_OUTPUT"
           fi
 
@@ -90,7 +90,6 @@ jobs:
           git add -- package.json package-lock.json README.md
           git commit -m "chore: release $RELEASE_TAG" -- package.json package-lock.json README.md
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
-          # Reject both updates if main advanced while checks were running.
           git push --atomic origin HEAD:refs/heads/main "refs/tags/$RELEASE_TAG"
 
       - name: Publish GitHub Release

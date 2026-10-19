@@ -16,14 +16,10 @@ function limit(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-// The production catalog currently omits this flag for gpt-6.1-sol even though
-// the model accepts the image payload used by this provider. Keep the exception
-// explicit instead of inferring vision support from a model family.
 const KNOWN_VISION_MODELS = new Set(["gpt-6.1-sol"]);
 
-/** The server's max_input_tokens is an input cap, not a total context window. */
 export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
-  const models: vscode.LanguageModelChatInformation[] = [];
+  const models = new Map<string, vscode.LanguageModelChatInformation>();
   const unavailable: string[] = [];
   const transports: CatalogProjection["transports"] = Object.create(null);
   const rejected = new Map<string, string>();
@@ -72,7 +68,7 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
         transport === "chat_completions")
     )
       continue;
-    const model = {
+    models.set(id, {
       id,
       name: metadata.name as string,
       family: metadata.family as string,
@@ -85,13 +81,10 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
           metadata.supports_images === true ||
           (metadata.supports_images == null && KNOWN_VISION_MODELS.has(id)),
       },
-    };
-    if (transports[id])
-      models[models.findIndex((existing) => existing.id === id)] = model;
-    else models.push(model);
+    });
     transports[id] = transport!;
   }
   for (const [id, reason] of rejected)
     if (!transports[id]) unavailable.push(reason);
-  return { models, unavailable, transports };
+  return { models: [...models.values()], unavailable, transports };
 }

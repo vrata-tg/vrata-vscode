@@ -128,3 +128,41 @@ test("prefers direct Messages when both protocol views expose a model", () => {
     "chat_completions",
   );
 });
+
+test("replaces duplicate IDs in place and preserves transport priority in either order", () => {
+  const chat = entry("shared");
+  const responses = entry("shared", {
+    verified_transport: "responses",
+    name: "Responses model",
+  });
+  const messages = entry("shared", {
+    protocol: "anthropic",
+    verified_transport: "messages",
+    name: "Messages model",
+  });
+  for (const preferred of [responses, messages]) {
+    for (const pair of [
+      [chat, preferred],
+      [preferred, chat],
+    ]) {
+      const result = projectCatalog([pair[0], entry("other"), pair[1]]);
+      assert.deepEqual(
+        result.models.map((model) => model.id),
+        ["shared", "other"],
+      );
+      assert.equal(result.models[0].name, preferred.gateway_metadata.name);
+      assert.equal(
+        result.transports.shared,
+        preferred.gateway_metadata.verified_transport,
+      );
+    }
+  }
+  for (const pair of [
+    [responses, messages],
+    [messages, responses],
+  ]) {
+    const result = projectCatalog(pair);
+    assert.equal(result.transports.shared, "messages");
+    assert.equal(result.models[0].name, "Messages model");
+  }
+});
