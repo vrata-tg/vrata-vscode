@@ -242,8 +242,13 @@ export async function openChat(modelSelector?: {
   throw new Error("Встроенный чат недоступен в этой версии редактора.");
 }
 
-/** Opens the native chat model picker on the Vrata AI provider. */
+/** Opens the native model picker in a local chat using the Vrata AI provider. */
 export async function openModelPicker(modelId?: string): Promise<void> {
+  // Agent Host sessions own a separate picker that cannot select our provider.
+  // Older editors only have local chat and do not expose this command.
+  const newLocalChat = "workbench.action.chat.newLocalChat";
+  if ((await vscode.commands.getCommands(true)).includes(newLocalChat))
+    await vscode.commands.executeCommand(newLocalChat);
   await openChat({ vendor: "vrata", ...(modelId ? { id: modelId } : {}) });
   await vscode.commands.executeCommand("workbench.action.chat.openModelPicker");
 }

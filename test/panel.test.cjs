@@ -122,6 +122,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       executeCommand: async (id, ...args) => {
         executed.push([id, ...args]);
       },
+      getCommands: async () => [],
     },
 
     lm: {
@@ -483,6 +484,21 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   executed.length = 0;
   await commands.get("vrata.openModelPicker")();
   assert.deepEqual(executed, [
+    [
+      "workbench.action.chat.open",
+      { modelSelector: { vendor: "vrata", id: "claude-haiku-4-5" } },
+    ],
+    ["workbench.action.chat.openModelPicker"],
+  ]);
+
+  // Agent Host has its own picker; the welcome action must use a local chat.
+  vscode.commands.getCommands = async () => [
+    "workbench.action.chat.newLocalChat",
+  ];
+  executed.length = 0;
+  await commands.get("vrata.openModelPicker")();
+  assert.deepEqual(executed, [
+    ["workbench.action.chat.newLocalChat"],
     [
       "workbench.action.chat.open",
       { modelSelector: { vendor: "vrata", id: "claude-haiku-4-5" } },
