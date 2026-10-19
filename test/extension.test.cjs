@@ -580,7 +580,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
   assert.equal(errors.length, 1);
   assert.ok(!errors[0].includes("private data"));
-  assert.match(errors[0], /HTTP 401/);
+  assert.doesNotMatch(errors[0], /HTTP|401|private data/);
   assert.equal(logShown, 1);
   await commands.get("vrata.showLogs")();
   assert.equal(logShown, 2);
@@ -675,7 +675,6 @@ test("native commands, masked input, silent discovery and secret events", async 
   assertLogged(/read cause/);
   readFailure = undefined;
 
-  // Errors before the HTTP request (including a disconnected session) must be logged too.
   const credentials = context.subscriptions.find(
     (item) => typeof item.loadCatalog === "function",
   );
@@ -815,6 +814,82 @@ test("native commands, masked input, silent discovery and secret events", async 
   await commands.get("vrata.copyDiagnostics")();
   assert.match(copied, /Модель: gpt-6-astra/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
+  const normalFetch = global.fetch;
+  let finishCleanup, cleanupStarted;
+  const cleanupReady = new Promise((resolve) => {
+    cleanupStarted = resolve;
+  });
+  global.fetch = async (url, options) => {
+    if (options.method !== "POST") return normalFetch(url, options);
+    return {
+      ok: true,
+      headers: new Headers({
+        "x-request-id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      }),
+      body: {
+        pipeThrough: () => ({
+          getReader: () => ({
+            read: async () => ({
+              done: false,
+              value: 'data: {"type":"response.completed"}\n\n',
+            }),
+            cancel: () =>
+              new Promise((resolve) => {
+                finishCleanup = resolve;
+                cleanupStarted();
+              }),
+            releaseLock() {},
+          }),
+        }),
+      },
+    };
+  };
+  const lateResponse = assert.rejects(
+    provider.provideLanguageModelChatResponse(
+      responsesModel,
+      [],
+      {},
+      { report() {} },
+      token,
+    ),
+    vscode.CancellationError,
+  );
+  await cleanupReady;
+  await credentials.replace("synthetic-next-key");
+  finishCleanup();
+  await lateResponse;
+  await commands.get("vrata.copyDiagnostics")();
+  assert.doesNotMatch(
+    copied,
+    /gpt-6-astra|aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/,
+  );
+
+  let finishStaging, stagingStarted, stagingSignal;
+  let stagingCalls = 0;
+  const stagingReady = new Promise((resolve) => {
+    stagingStarted = resolve;
+  });
+  global.fetch = async (url, options) => {
+    if (!url.includes("staging")) return normalFetch(url, options);
+    stagingCalls++;
+    stagingSignal = options.signal;
+    stagingStarted();
+    return new Promise((resolve) => {
+      finishStaging = resolve;
+    });
+  };
+  const noticeCount = notices.length;
+  const errorCount = errors.length;
+  const lateStaging = commands.get("vrata.debugStaging")();
+  await stagingReady;
+  await credentials.replace("synthetic-staging-new-key");
+  assert.equal(stagingSignal.aborted, true);
+  finishStaging(new Response('{"data":[]}'));
+  await lateStaging;
+  assert.equal(stagingCalls, 1);
+  assert.equal(notices.length, noticeCount);
+  assert.equal(errors.length, errorCount);
+  global.fetch = normalFetch;
   await commands.get("vrata.removeApiKey")();
   await assert.rejects(
     provider.provideLanguageModelChatResponse(
@@ -827,7 +902,6 @@ test("native commands, masked input, silent discovery and secret events", async 
   );
   assertLogged(/Врата AI не подключены/);
 
-  // Non-Error exceptions from editor commands are also useful diagnostics.
   vscode.workspace.getConfiguration = () => {
     throw { operation: "read editor config", code: 735 };
   };

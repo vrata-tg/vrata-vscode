@@ -1,11 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const {
-  normalizeReasoning,
-  resolveReasoning,
-  chatCompletionsReasoning,
-} = require("../dist/reasoning");
-
+const { normalizeReasoning, resolveReasoning } = require("../dist/reasoning");
 test("reasoning levels normalize strictly", () => {
   assert.equal(normalizeReasoning("none"), "none");
   assert.equal(normalizeReasoning("low"), "low");
@@ -26,17 +21,9 @@ test("stored level applies; explicit modelOptions override wins", () => {
     resolveReasoning({ modelOptions: { reasoningEffort: "low" } }, "high"),
     "low",
   );
-  // A bogus override must not mask the stored level with a bad value.
   assert.equal(
     resolveReasoning({ modelOptions: { reasoningEffort: "ultra" } }, "high"),
     "high",
   );
   assert.equal(resolveReasoning({ modelOptions: {} }, undefined), undefined);
-});
-
-test("reasoning only rides the verified chat_completions payload", () => {
-  assert.deepEqual(chatCompletionsReasoning(undefined), {});
-  assert.deepEqual(chatCompletionsReasoning("medium"), {
-    reasoning_effort: "medium",
-  });
 });

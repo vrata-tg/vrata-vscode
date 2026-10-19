@@ -85,11 +85,7 @@ export async function streamResponses(
   }
   const requestId = response.headers.get("x-request-id") ?? undefined;
   if (!response.ok) {
-    try {
-      await response.body?.cancel();
-    } catch {
-      // Preserve the actionable HTTP status if the response body won't cancel.
-    }
+    await response.body?.cancel().catch(() => {});
     throw new TransportError(
       httpCode(response.status, response.headers.get("retry-after")),
       response.status,
@@ -149,7 +145,10 @@ export async function streamResponses(
     ) {
       if (typeof event.delta !== "string") throw invalid();
       report({ text: event.delta });
-    } else if (event.type === "response.output_item.added") {
+    } else if (
+      event.type === "response.output_item.added" ||
+      event.type === "response.output_item.done"
+    ) {
       const item = event.item as Record<string, unknown> | undefined;
       if (item?.type === "function_call") {
         if (
@@ -171,16 +170,6 @@ export async function streamResponses(
       } else {
         if (typeof event.arguments !== "string") throw invalid();
         call.arguments = event.arguments;
-      }
-    } else if (event.type === "response.output_item.done") {
-      const item = event.item as Record<string, unknown> | undefined;
-      if (item?.type === "function_call") {
-        if (
-          typeof item.id !== "string" ||
-          !Number.isSafeInteger(event.output_index)
-        )
-          throw invalid();
-        functionCall(item.id, event.output_index as number, item);
       }
     } else if (event.type === "response.completed") {
       completed = true;

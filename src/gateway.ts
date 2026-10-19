@@ -54,7 +54,6 @@ function accountSnapshot(value: unknown): AccountSnapshot | undefined {
   return value as AccountSnapshot;
 }
 
-/** Only the confirmed read-only contract is used here (#337 extends metadata). */
 export class GatewayClient {
   constructor(
     private readonly request: typeof fetch = fetch,
@@ -67,6 +66,7 @@ export class GatewayClient {
     const endpoint = `${this.origin}/v1/models`;
     const entries: unknown[] = [];
     for (const protocol of ["openai", "anthropic"] as const) {
+      signal.throwIfAborted();
       this.log(`GET ${endpoint} (${protocol}) — проверка ключа`);
       const response = await this.request(endpoint, {
         method: "GET",

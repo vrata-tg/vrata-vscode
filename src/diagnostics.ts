@@ -14,7 +14,6 @@ export function formatError(
     .sort((a, b) => b.length - a.length)) {
     const quoted = inspect(key);
     const escaped = quoted.slice(1, -1);
-    // Surrounding quotes can make inspect use single quotes and escape apostrophes.
     const singleQuoted =
       quoted[0] === "'" ? escaped : escaped.replaceAll("'", "\\'");
     details = details

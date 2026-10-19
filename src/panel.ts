@@ -6,17 +6,10 @@ import {
   REASONING_CHOICES,
   normalizeReasoning,
 } from "./reasoning";
-
-export const MODEL_STATE_KEY = "vrata.panelModel";
-export const REASONING_STATE_KEY = "vrata.panelReasoning";
-
-/**
- * The bot does not expose profile or history over the API, so the panel shows
- * exactly what /v1/account and /v1/models return plus the local choices.
- */
+const MODEL_STATE_KEY = "vrata.panelModel";
+const REASONING_STATE_KEY = "vrata.panelReasoning";
 export class VrataPanel implements vscode.Disposable {
-  private readonly tree: vscode.EventEmitter<void | TreeItem | null[]> =
-    new vscode.EventEmitter();
+  private readonly tree = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.tree.event;
 
   constructor(
@@ -26,9 +19,7 @@ export class VrataPanel implements vscode.Disposable {
       readonly accountInvalid: boolean;
       readonly accountUnavailable: boolean;
       readonly account?: AccountSnapshot;
-      loadAccount(): Promise<void>;
     },
-    private readonly logError: (error: unknown) => void,
   ) {}
 
   dispose(): void {
@@ -48,7 +39,6 @@ export class VrataPanel implements vscode.Disposable {
   async setModel(id: string): Promise<void> {
     await this.context.globalState.update(MODEL_STATE_KEY, id);
     this.refresh();
-    // The routed chat entry advertises the new target in its detail line.
     this.onExternalChange?.();
   }
 
@@ -58,23 +48,13 @@ export class VrataPanel implements vscode.Disposable {
     this.onExternalChange?.();
   }
 
-  /** Wired by the extension: fires the provider's change event. */
   onExternalChange?: () => void;
 
   refresh(): void {
     this.tree.fire();
   }
 
-  /** Surface panel-level failures through the editor's notification UI. */
-  report(error: unknown): void {
-    void Promise.resolve(
-      vscode.window.showErrorMessage(
-        error instanceof Error ? error.message : String(error),
-      ),
-    ).then(undefined, this.logError);
-  }
-
-  private state(): string {
+  private state() {
     const c = this.credentials;
     if (!c.connected) return "not_connected";
     if (c.accountInvalid) return "invalid_key";
@@ -82,20 +62,26 @@ export class VrataPanel implements vscode.Disposable {
     if (!c.account) return "loading";
     return "connected";
   }
-
-  getTreeItem(item: TreeItem): TreeItem {
+  getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
     return item;
   }
-
-  async getChildren(): Promise<TreeItem[]> {
+  async getChildren(): Promise<vscode.TreeItem[]> {
     const c = this.credentials;
     const state = this.state();
-    const connection: TreeItem = {
-      label: `Подключение: ${this.stateLabel(state)}`,
-      iconPath: this.stateIcon(state),
-      contextValue: "connection",
-    };
-    const items: TreeItem[] = state === "connected" ? [] : [connection];
+    const [label, icon] = {
+      not_connected: ["нет ключа", "plug"],
+      invalid_key: ["неверный ключ", "warning"],
+      unavailable: ["нет связи", "wifi-off"],
+      loading: ["загрузка баланса…", "sync~spin"],
+      connected: ["подключено", "check"],
+    }[state];
+    const items: vscode.TreeItem[] = [];
+    if (state !== "connected")
+      items.push({
+        label: `Подключение: ${label}`,
+        iconPath: new vscode.ThemeIcon(icon),
+        contextValue: "connection",
+      });
     const account = c.account;
     if (account) {
       items.push({
@@ -118,32 +104,11 @@ export class VrataPanel implements vscode.Disposable {
         contextValue: "hint",
       });
     }
-    for (const action of this.actions()) items.push(action);
+    items.push(...this.actions(state === "connected"));
     return items;
   }
-
-  private stateLabel(state: string): string {
-    return {
-      not_connected: "нет ключа",
-      invalid_key: "неверный ключ",
-      unavailable: "нет связи",
-      loading: "загрузка баланса…",
-      connected: "подключено",
-    }[state]!;
-  }
-
-  private stateIcon(state: string): vscode.ThemeIcon {
-    return {
-      not_connected: new vscode.ThemeIcon("plug"),
-      invalid_key: new vscode.ThemeIcon("warning"),
-      unavailable: new vscode.ThemeIcon("wifi-off"),
-      loading: new vscode.ThemeIcon("sync~spin"),
-      connected: new vscode.ThemeIcon("check"),
-    }[state]!;
-  }
-
-  private actions(): TreeItem[] {
-    const actions: TreeItem[] = [];
+  private actions(connected: boolean): vscode.TreeItem[] {
+    const actions: vscode.TreeItem[] = [];
     const add = (label: string, command: string, icon: string): void => {
       actions.push({
         label,
@@ -154,25 +119,16 @@ export class VrataPanel implements vscode.Disposable {
     };
     add("Подключить / заменить ключ", "vrata.setApiKey", "key");
     add(
-      this.state() === "connected" ? "Выбрать модель в чате" : "Открыть чат",
-      this.state() === "connected" ? "vrata.openModelPicker" : "vrata.openChat",
-      this.state() === "connected" ? "list-selection" : "comment-discussion",
+      connected ? "Выбрать модель в чате" : "Открыть чат",
+      connected ? "vrata.openModelPicker" : "vrata.openChat",
+      connected ? "list-selection" : "comment-discussion",
     );
     add("Открыть бота", "vrata.getApiKey", "globe");
     return actions;
   }
 }
 
-export interface TreeItem {
-  label: string;
-  tooltip?: string;
-  iconPath?: vscode.ThemeIcon;
-  command?: { command: string; title: string };
-  contextValue?: string;
-}
-
-/** Quick Pick over confirmed catalog models; the panel keeps the last choice. */
-export async function pickModel(
+async function pickModel(
   panel: VrataPanel,
   catalog: readonly { id: string }[],
 ): Promise<void> {
@@ -191,7 +147,7 @@ export async function pickModel(
   await panel.setModel(choice.label);
 }
 
-export async function pickReasoning(panel: VrataPanel): Promise<void> {
+async function pickReasoning(panel: VrataPanel): Promise<void> {
   const current = panel.reasoning;
   const choice = await vscode.window.showQuickPick(
     [
@@ -219,8 +175,7 @@ export async function pickReasoning(panel: VrataPanel): Promise<void> {
   if (choice) await panel.setReasoning(choice.value ?? undefined);
 }
 
-/** Opens the editor's built-in chat view. Never types into the input. */
-export async function openChat(modelSelector?: {
+async function openChat(modelSelector?: {
   vendor: string;
   id?: string;
 }): Promise<void> {
@@ -242,10 +197,7 @@ export async function openChat(modelSelector?: {
   throw new Error("Встроенный чат недоступен в этой версии редактора.");
 }
 
-/** Opens the native model picker in a local chat using the Vrata AI provider. */
-export async function openModelPicker(modelId?: string): Promise<void> {
-  // Agent Host sessions own a separate picker that cannot select our provider.
-  // Older editors only have local chat and do not expose this command.
+async function openModelPicker(modelId?: string): Promise<void> {
   const newLocalChat = "workbench.action.chat.newLocalChat";
   if ((await vscode.commands.getCommands(true)).includes(newLocalChat))
     await vscode.commands.executeCommand(newLocalChat);
@@ -256,33 +208,15 @@ export async function openModelPicker(modelId?: string): Promise<void> {
 export function registerPanelCommands(
   panel: VrataPanel,
   catalog: () => readonly { id: string }[],
-): vscode.Disposable[] {
-  return [
-    vscode.commands.registerCommand("vrata.selectModel", () =>
-      pickModel(panel, catalog()),
-    ),
-    vscode.commands.registerCommand("vrata.selectReasoning", () =>
-      pickReasoning(panel),
-    ),
-    vscode.commands.registerCommand("vrata.openChat", async () => {
-      try {
-        await openChat();
-      } catch (error) {
-        // A missing built-in chat command is expected on older editors.
-        panel.report(error);
-      }
-    }),
-    vscode.commands.registerCommand("vrata.openModelPicker", async () => {
-      try {
-        const models = catalog();
-        // The tabbed picker derives its initial provider tab from the selected model.
-        const modelId =
-          models.find((model) => model.id === panel.modelId)?.id ??
-          models[0]?.id;
-        await openModelPicker(modelId);
-      } catch (error) {
-        panel.report(error);
-      }
-    }),
-  ];
+  command: (id: string, action: () => Promise<void>) => void,
+): void {
+  command("vrata.selectModel", () => pickModel(panel, catalog()));
+  command("vrata.selectReasoning", () => pickReasoning(panel));
+  command("vrata.openChat", () => openChat());
+  command("vrata.openModelPicker", async () => {
+    const models = catalog();
+    const modelId =
+      models.find((model) => model.id === panel.modelId)?.id ?? models[0]?.id;
+    await openModelPicker(modelId);
+  });
 }

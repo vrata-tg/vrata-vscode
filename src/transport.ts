@@ -89,11 +89,7 @@ export async function streamChat(
   }
   const requestId = response.headers.get("x-request-id") ?? undefined;
   if (!response.ok) {
-    try {
-      await response.body?.cancel();
-    } catch {
-      // The HTTP status remains the actionable failure.
-    }
+    await response.body?.cancel().catch(() => {});
     throw new TransportError(
       httpCode(response.status, response.headers.get("retry-after")),
       response.status,
@@ -166,7 +162,6 @@ export async function streamChat(
       throw new TransportError("invalid_stream", 200, requestId);
     if (finish !== "stop" && finish !== "tool_calls")
       throw new TransportError("invalid_stream", 200, requestId);
-    // Validate the whole batch before letting the editor execute any tool.
     const parts: Part[] = [...calls.values()].map((call) => {
       if (finish !== "tool_calls" || !call.id || !call.name)
         throw new TransportError("invalid_stream", 200, requestId);

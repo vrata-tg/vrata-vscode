@@ -27,10 +27,8 @@ interface Session {
   accountFailed?: boolean;
   accountInvalid?: boolean;
   accountRequest?: Promise<void>;
-  cache: Map<string, unknown>;
 }
 
-/** A request and its account-scoped cache belong to exactly one credential session. */
 export class Credentials {
   static readonly catalogTtlMs = 5 * 60_000;
   static readonly catalogRetryMs = 60_000;
@@ -77,11 +75,6 @@ export class Credentials {
   get account(): AccountSnapshot | undefined {
     return this.session?.account;
   }
-  get accountStale(): boolean {
-    return (
-      this.session?.accountFailed === true && this.session.account !== undefined
-    );
-  }
   get accountUnavailable(): boolean {
     return (
       this.session?.accountFailed === true && this.session.account === undefined
@@ -96,11 +89,6 @@ export class Credentials {
     this.queue = result.catch(() => {});
     return result;
   }
-
-  initialize(): Promise<void> {
-    return this.reload();
-  }
-
   reload(): Promise<void> {
     return this.serialize(async () => {
       const key = await this.secrets.get(SECRET_KEY);
@@ -117,14 +105,12 @@ export class Credentials {
 
   private switchSession(key?: string, catalog?: readonly unknown[]): void {
     this.session?.controller.abort();
-    this.session?.cache.clear();
     this.session = key
       ? {
           key,
           catalog,
           catalogLoadedAt: catalog === undefined ? undefined : this.now(),
           controller: new AbortController(),
-          cache: new Map(),
         }
       : undefined;
     this.changed();
@@ -150,7 +136,6 @@ export class Credentials {
       await this.secrets.store(SECRET_KEY, key);
       if (!this.disposed) this.switchSession(key, catalog);
     });
-    // A removal can supersede a store already in progress. It owns the final UI result.
     if (this.disposed || attempt !== this.attempt)
       throw new CredentialOperationCancelled();
   }
@@ -170,7 +155,6 @@ export class Credentials {
     operation: (session: {
       key: string;
       signal: AbortSignal;
-      cache: Map<string, unknown>;
       isCurrent: () => boolean;
     }) => Promise<T>,
   ): Promise<T> {
@@ -186,8 +170,11 @@ export class Credentials {
     const result = await operation({
       key: session.key,
       signal: session.controller.signal,
-      cache: session.cache,
       isCurrent,
+    }).catch((error) => {
+      if (!isCurrent())
+        throw new CredentialOperationCancelled("", { cause: error });
+      throw error;
     });
     if (!isCurrent()) throw new CredentialOperationCancelled();
     return result;
@@ -265,7 +252,6 @@ export class Credentials {
     this.disposed = true;
     this.cancelValidation();
     this.session?.controller.abort();
-    this.session?.cache.clear();
     this.session = undefined;
   }
 }

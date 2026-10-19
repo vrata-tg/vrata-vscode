@@ -20,13 +20,11 @@ import {
   GatewayClient,
 } from "./gateway";
 import { VrataPanel, registerPanelCommands } from "./panel";
-import { chatCompletionsReasoning, resolveReasoning } from "./reasoning";
+import { resolveReasoning } from "./reasoning";
 import { modelPickerTabsEnabled } from "./welcome";
 
 const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
 
-// Custom vector icon of the provider tab in the chat model picker, shared with
-// the Activity bar entry. Editor versions without category icons ignore it.
 function providerIconPath(extensionUri: vscode.Uri): vscode.Uri | undefined {
   const minor = Number(vscode.version.split(".")[1] ?? 0);
   return minor >= 106
@@ -35,8 +33,6 @@ function providerIconPath(extensionUri: vscode.Uri): vscode.Uri | undefined {
 }
 
 function modelPickerCategory(): string | { label: string; order: number } {
-  // VS Code 1.126 changed the provider metadata shape from an ordered object
-  // to a plain string. Keep the old shape for the minimum supported editor.
   const minor = Number(vscode.version.split(".")[1] ?? 0);
   return minor >= 126
     ? MODEL_PICKER_CATEGORY_LABEL
@@ -269,7 +265,7 @@ async function activateWithOutput(
           if (error instanceof CredentialOperationCancelled) return;
           const message =
             error instanceof CredentialError
-              ? error.message
+              ? "Не удалось проверить API-ключ. Проверьте ключ и соединение."
               : "Не удалось выполнить команду Врат AI.";
           await showError(message);
         }
@@ -278,28 +274,26 @@ async function activateWithOutput(
   }
   command("vrata.showLogs", () => output.show(true));
   command("vrata.debugStaging", async () => {
-    if (!credentials.connected || !credentials.key)
-      throw new CredentialError("Врата AI не подключены. Вставьте API-ключ.");
     const staging = new GatewayClient(
       fetch,
       (message) => output.info("[staging] " + message),
       STAGING_API_ORIGIN,
     );
-    const catalog = await staging.models(
-      credentials.key,
-      new AbortController().signal,
-    );
-    const { models, unavailable } = projectCatalog(catalog);
-    output.info(
-      "[staging] Каталог получен: доступно моделей " +
-        models.length +
-        "; пропущено " +
-        unavailable.length +
-        ".",
-    );
-    await vscode.window.showInformationMessage(
-      "Staging-проверка завершена. Доступно моделей: " + models.length + ".",
-    );
+    await credentials.run(async (session) => {
+      const catalog = await staging.models(session.key, session.signal);
+      if (!session.isCurrent()) throw new CredentialOperationCancelled();
+      const { models, unavailable } = projectCatalog(catalog);
+      output.info(
+        "[staging] Каталог получен: доступно моделей " +
+          models.length +
+          "; пропущено " +
+          unavailable.length +
+          ".",
+      );
+      await vscode.window.showInformationMessage(
+        "Staging-проверка завершена. Доступно моделей: " + models.length + ".",
+      );
+    });
   });
   let editing = false;
   command("vrata.setApiKey", async (keys) => {
@@ -379,16 +373,15 @@ async function activateWithOutput(
   command("vrata.getApiKey", () =>
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
   );
-  const panel = new VrataPanel(context, credentials, (error) =>
-    logError(error),
-  );
+  const panel = new VrataPanel(context, credentials);
   panel.onExternalChange = () => changes.fire();
+  registerPanelCommands(
+    panel,
+    () => projectCatalog(credentials.catalog).models,
+    command,
+  );
   context.subscriptions.push(
     panel,
-    ...registerPanelCommands(
-      panel,
-      () => projectCatalog(credentials.catalog).models,
-    ),
     vscode.window.registerTreeDataProvider("vrata.panel", panel),
   );
   function openWalkthrough(): Thenable<unknown> {
@@ -456,7 +449,7 @@ async function activateWithOutput(
     }),
   );
   try {
-    await credentials.initialize();
+    await credentials.reload();
   } catch (error) {
     logError(error);
     void showError("Не удалось прочитать ключ Врат AI. Повторите подключение.");
@@ -470,10 +463,8 @@ async function activateWithOutput(
         let key = credentials.key;
         try {
           if (token.isCancellationRequested) return [];
-          // Add Models invokes non-silent discovery for providers with managementCommand.
           if (!options.silent)
             await vscode.commands.executeCommand("vrata.manage");
-          // Background discovery never prompts, even if called repeatedly without credentials.
           if (!credentials.connected || token.isCancellationRequested)
             return [];
           key = credentials.key;
@@ -486,12 +477,7 @@ async function activateWithOutput(
         const icon = providerIconPath(context.extensionUri);
         return models.map((model) => ({
           ...model,
-          // VS Code 1.104 reads this metadata field when grouping provider
-          // models. Keeping it on the returned object moves Vrata out of the
-          // generic "Other Models" bucket without replacing the native chat.
           category: modelPickerCategory(),
-          // VS Code 1.106 added a category icon for provider tabs in the
-          // model picker. Older editors ignore the field, so keep it last.
           ...(icon ? { icon } : {}),
           ...(credentials.catalogStale
             ? {
@@ -605,7 +591,7 @@ async function activateWithOutput(
                   model: targetId,
                   messages: convertedMessages,
                   max_tokens: model.maxOutputTokens,
-                  ...chatCompletionsReasoning(effort),
+                  ...(effort ? { reasoning_effort: effort } : {}),
                   ...(options.tools?.length
                     ? {
                         tools: options.tools.map((tool) => ({
@@ -646,7 +632,8 @@ async function activateWithOutput(
                   );
                 },
               );
-              lastDiagnostic = { modelId: model.id, requestId };
+              if (session.isCurrent() && !signal.aborted)
+                lastDiagnostic = { modelId: model.id, requestId };
             } finally {
               subscription.dispose();
               if (session.isCurrent())
@@ -665,8 +652,8 @@ async function activateWithOutput(
             requestId: detail.requestId,
           };
           notifyRequestFailure(detail);
-          // eslint-disable-next-line preserve-caught-error -- The original is logged above; its cause may expose a key to the editor.
-          throw new Error(detail.message);
+          const publicError = new Error(detail.message);
+          throw publicError;
         }
       },
     }),

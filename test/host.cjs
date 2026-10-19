@@ -1,4 +1,3 @@
-// Run against an installed VSIX. Synthetic credentials never leave loopback HTTP.
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const vscode = require("vscode");
@@ -55,7 +54,7 @@ exports.run = async () => {
   );
   const credentials = new Credentials(secrets, client, () => {});
   try {
-    await credentials.initialize();
+    await credentials.reload();
     if (process.env.VRATA_HOST_PHASE === "write") {
       assert.equal(credentials.connected, false, "Use a clean profile");
       await credentials.replace("  synthetic-host-key  ");
