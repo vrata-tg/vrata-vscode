@@ -76,10 +76,6 @@
         {
           "command": "vrata.showLogs",
           "when": "false"
-        },
-        {
-          "command": "vrata.debugStaging",
-          "when": "false"
         }
       ]
     },
@@ -148,11 +144,6 @@
       {
         "command": "vrata.showLogs",
         "title": "Открыть журнал",
-        "category": "Врата AI"
-      },
-      {
-        "command": "vrata.debugStaging",
-        "title": "Проверить staging-каталог",
         "category": "Врата AI"
       }
     ],
