@@ -304,7 +304,7 @@ async function activateWithOutput(
         title: credentials.connected
           ? "Врата AI: заменить API-ключ"
           : "Врата AI: вставить API-ключ",
-        prompt: "Ключ из бота Врата AI в формате sk-***",
+        prompt: "Ключ из бота Врата AI в формате sk***",
         password: true,
         ignoreFocusOut: true,
         placeHolder: "Вставьте API-ключ",
