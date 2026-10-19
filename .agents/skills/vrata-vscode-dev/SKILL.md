@@ -239,6 +239,11 @@ advanced beyond the task branch's base, merge it into the task branch, resolve
 conflicts and rerun the affected checks before pushing. A failed fast-forward
 or push is a signal to fetch and reconcile, never to force push.
 
+When creating or updating a PR, its title must follow Conventional Commits,
+for example `type: description` or `type(scope): description` (scope is optional).
+Choose the type and description for the complete current PR diff, for example
+`feat: add token usage reporting`.
+
 1. stage only intended files and commit conventionally;
 2. push the feature branch and update its existing PR, or open one against
    `main` if none exists;
