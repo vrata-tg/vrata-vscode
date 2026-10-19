@@ -21,12 +21,15 @@
     ]
   },
   "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --skip-license",
     "test": "npm run build && node --test test/*.test.cjs"
   },
   "devDependencies": {
     "@types/node": "22.19.0",
     "@types/vscode": "1.138.0",
+    "@vscode/vsce": "4.0.0",
     "typescript": "5.9.3"
   }
 }

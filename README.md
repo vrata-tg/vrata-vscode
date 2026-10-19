@@ -34,8 +34,15 @@ npm test
 
 The transport tests use a local HTTP server, including fragmented streaming,
 interleaved tool calls, cancellation, HTTP errors and incomplete streams. CI
-runs only these checks and compilation. The fixture is intentionally broken;
+runs these checks, then packages the extension as a VSIX and uploads it as the
+`vrata-provider-spike-vsix` artifact. Download it from **Actions → CI → run →
+Artifacts**. CI runs on pushes to `main`, pull requests, and manual dispatch.
+The fixture is intentionally broken;
 its test becomes green only after the agent fixes it.
+
+To build the same package locally after `npm ci`, run `npm run package`.
+It produces `vrata-provider-spike-<version>.vsix`. This remains a development-only
+probe: installing the VSIX does not enable the provider in a normal extension host.
 
 For a real stable extension-host check, use isolated empty profile/extension
 directories and the absolute path to this package:
@@ -50,6 +57,30 @@ code --user-data-dir /tmp/vrata-host-profile \
 This test starts its own loopback fake gateway and never reads live credentials.
 It checks provider discovery, signed-out GitHub state, real VS Code tool-part
 serialization and a parameterless tool request. No proposed API flags.
+
+## Release a new version
+
+Open **Actions → Release → Run workflow**, select **main**, and enter the next
+stable version without `v`, for example `0.0.2`. The workflow updates
+`package.json` and `package-lock.json`, runs the offline tests, builds the VSIX,
+then commits the version, pushes an annotated `v0.0.2` tag, and publishes a
+GitHub Release with generated release notes and the VSIX attached. No Marketplace
+token or other custom secret is needed; it uses the repository's `GITHUB_TOKEN`.
+
+The version must be greater than the current version. Releases run sequentially.
+If publication fails after the tag was pushed, rerun with the same version: the
+workflow builds from the existing tag and resumes the draft release. A published
+release is left unchanged. If `main` advances during the checks, the atomic push
+fails without updating the remote branch or creating the tag; start a new run
+with the same version to test the latest `main`.
+
+Repository rules must allow GitHub Actions to push release commits to `main` and
+create `v*` tags, and allow `contents: write` for `GITHUB_TOKEN`. A rule requiring
+pull requests for every change to `main` will block this workflow unless the
+release bot is allowed to bypass it.
+
+Releases distribute the development-only probe through GitHub Releases; they do
+not publish to the VS Code Marketplace or enable it in a normal extension host.
 
 ## Live smoke (explicit opt-in)
 

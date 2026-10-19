@@ -1,0 +1,109 @@
+name: Release
+run-name: Release v${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version without v (for example, 0.0.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: v${{ inputs.version }}
+      VSIX_PATH: vrata-provider-spike-${{ inputs.version }}.vsix
+    steps:
+      - name: Require main branch
+        run: test "$GITHUB_REF" = refs/heads/main
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Prepare version
+        id: version
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo '::error::Version must be a stable SemVer such as 0.0.2, without v.'
+            exit 1
+          fi
+
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            # Resume a release after its commit/tag were already pushed.
+            git merge-base --is-ancestor "$RELEASE_TAG" origin/main
+            git checkout --detach "$RELEASE_TAG"
+            node -e 'if (require("./package.json").version !== process.env.RELEASE_VERSION) process.exit(1)'
+            echo 'existing=true' >> "$GITHUB_OUTPUT"
+          else
+            node <<'NODE'
+          const current = require('./package.json').version.split('.').map(BigInt);
+          const next = process.env.RELEASE_VERSION.split('.').map(BigInt);
+          const difference = next.findIndex((part, index) => part !== current[index]);
+          if (difference === -1 || next[difference] < current[difference]) {
+            console.error('New version must be greater than the current package version.');
+            process.exit(1);
+          }
+          NODE
+            npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+            echo 'existing=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Package extension
+        run: npm run package -- --out "$VSIX_PATH"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vrata-provider-spike-${{ inputs.version }}
+          path: ${{ env.VSIX_PATH }}
+          if-no-files-found: error
+
+      - name: Commit version and push tag
+        if: steps.version.outputs.existing == 'false'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- package.json package-lock.json
+          git commit -m "chore: release $RELEASE_TAG" -- package.json package-lock.json
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          # Reject both updates if main advanced while checks were running.
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/$RELEASE_TAG"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "$RELEASE_TAG" --generate-notes
+          fi
+          is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"
+          if [[ "$is_draft" == true ]]; then
+            gh release upload "$RELEASE_TAG" "$VSIX_PATH" --clobber
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi
