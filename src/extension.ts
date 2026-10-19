@@ -526,13 +526,10 @@ async function activateWithOutput(
               output.info(
                 `Запрос: модель ${targetId}, транспорт ${transport}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
-              let endpoint = `${API_ORIGIN}/v1/chat/completions`;
               let stream = streamChat;
               if (transport === "messages") {
-                endpoint = `${API_ORIGIN}/v1/messages`;
                 stream = streamMessages;
               } else if (transport === "responses") {
-                endpoint = `${API_ORIGIN}/v1/responses`;
                 stream = streamResponses;
               }
               const convertedMessages = toMessages(messages);
@@ -616,7 +613,7 @@ async function activateWithOutput(
                 };
               }
               const requestId = await stream(
-                endpoint,
+                API_ORIGIN,
                 session.key,
                 requestBody,
                 signal,

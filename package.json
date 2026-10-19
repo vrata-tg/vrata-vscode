@@ -204,7 +204,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node build-sdk.mjs",
     "test": "npm run build && node --test test/*.test.cjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package --no-dependencies",
@@ -221,6 +221,7 @@
     "@types/node": "22.19.0",
     "@types/vscode": "1.104.0",
     "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
     "eslint": "10.11.0",
     "globals": "16.5.0",
     "prettier": "3.9.9",
@@ -245,5 +246,9 @@
       "description": "Для подключения Врат AI настройте рабочее пространство как доверенное."
     },
     "virtualWorkspaces": false
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "openai": "7.39.0"
   }
 }

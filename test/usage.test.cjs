@@ -12,7 +12,8 @@ const expected = {
   total_tokens: 72,
   prompt_tokens_details: { cached_tokens: 30 },
 };
-const sse = (event) => `data: ${JSON.stringify(event)}\n\n`;
+const sse = (event) =>
+  `${event.type ? `event: ${event.type}\n` : ""}data: ${JSON.stringify(event)}\n\n`;
 const fixtures = [
   {
     name: "Chat Completions",
@@ -90,7 +91,18 @@ for (const fixture of fixtures) {
         assert.deepEqual(body.stream_options, { include_usage: true });
       else assert.equal(body.stream_options, undefined);
       res.writeHead(200, { "Content-Type": "text/event-stream" });
-      for (const byte of Buffer.from(fixture.events.map(sse).join("") + ending))
+      const events = fixture.events.map((event) =>
+        ending === "" && event.choices
+          ? {
+              ...event,
+              choices: event.choices.map((choice) => ({
+                ...choice,
+                finish_reason: null,
+              })),
+            }
+          : event,
+      );
+      for (const byte of Buffer.from(events.map(sse).join("") + ending))
         res.write(Buffer.from([byte]));
       res.end();
     });
@@ -99,7 +111,7 @@ for (const fixture of fixtures) {
       server.closeAllConnections();
       server.close();
     });
-    const url = `http://127.0.0.1:${server.address().port}/fixture`;
+    const url = `http://127.0.0.1:${server.address().port}`;
     const parts = [];
     await fixture.stream(
       url,

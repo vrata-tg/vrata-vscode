@@ -14,7 +14,7 @@ async function server(t, handler) {
     value.closeAllConnections();
     value.close();
   });
-  return `http://127.0.0.1:${value.address().port}/v1/responses`;
+  return `http://127.0.0.1:${value.address().port}`;
 }
 
 test("converts chat history, images and tool results to Responses input items", () => {

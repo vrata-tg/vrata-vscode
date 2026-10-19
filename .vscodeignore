@@ -16,3 +16,6 @@ eslint.config.mjs
 **/*.map
 CLAUDE.md
 GEMINI.md
+
+build-sdk.mjs
+licenses/**

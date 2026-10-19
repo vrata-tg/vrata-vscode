@@ -840,35 +840,17 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.match(copied, /Модель: gpt-6-astra/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
   const normalFetch = global.fetch;
-  let finishCleanup, cleanupStarted;
-  const cleanupReady = new Promise((resolve) => {
-    cleanupStarted = resolve;
+  let finishResponse, responseStarted;
+  const responseReady = new Promise((resolve) => {
+    responseStarted = resolve;
   });
   global.fetch = async (url, options) => {
     if (options.method !== "POST") return normalFetch(url, options);
-    return {
-      ok: true,
-      headers: new Headers({
-        "x-request-id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      }),
-      body: {
-        pipeThrough: () => ({
-          getReader: () => ({
-            read: async () => ({
-              done: false,
-              value:
-                'data: {"type":"response.completed","response":{"usage":{"input_tokens":60,"output_tokens":12}}}\n\n',
-            }),
-            cancel: () =>
-              new Promise((resolve) => {
-                finishCleanup = resolve;
-                cleanupStarted();
-              }),
-            releaseLock() {},
-          }),
-        }),
-      },
-    };
+    responseStarted();
+    // Deliberately ignore abort to exercise rejection of a late old-session result.
+    return new Promise((resolve) => {
+      finishResponse = resolve;
+    });
   };
   const lateParts = [];
   const lateResponse = assert.rejects(
@@ -881,9 +863,14 @@ test("native commands, masked input, silent discovery and secret events", async 
     ),
     vscode.CancellationError,
   );
-  await cleanupReady;
+  await responseReady;
   await credentials.replace("synthetic-next-key");
-  finishCleanup();
+  finishResponse(
+    new Response(
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":60,"output_tokens":12}}}\n\n',
+      { headers: { "x-request-id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } },
+    ),
+  );
   await lateResponse;
   assert.deepEqual(lateParts, []);
   await commands.get("vrata.copyDiagnostics")();

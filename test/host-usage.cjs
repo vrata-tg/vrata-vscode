@@ -46,7 +46,7 @@ exports.run = async (extensionPath) => {
         progress,
       ) => {
         await streamChat(
-          `http://127.0.0.1:${server.address().port}/chat`,
+          `http://127.0.0.1:${server.address().port}`,
           "synthetic-host-key",
           {},
           new AbortController().signal,
