@@ -539,7 +539,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     label: "Врата AI",
     order: 0,
   });
-  assert.equal(discovered[0][0].maxInputTokens, 120000);
+  assert.equal(discovered[0][0].maxInputTokens, 112000);
+  assert.equal(
+    discovered[0][0].maxInputTokens + discovered[0][0].maxOutputTokens,
+    120000,
+  );
   assert.equal(discovered[0][0].capabilities.imageInput, true);
   assert.equal(
     requests.length,
@@ -925,6 +929,17 @@ test("native commands, masked input, silent discovery and secret events", async 
     TypeError,
   );
   assertLogged(/circular/);
+  const contextText = "hello world ".repeat(10_000);
+  assert.ok((await provider.provideTokenCount({}, contextText)) < 100_000);
+  assert.ok(
+    (await provider.provideTokenCount(
+      {},
+      {
+        role: vscode.LanguageModelChatMessageRole.User,
+        content: [new vscode.LanguageModelTextPart(contextText)],
+      },
+    )) < 100_000,
+  );
   const message = {
     role: vscode.LanguageModelChatMessageRole.Assistant,
     content: [
