@@ -1,8 +1,6 @@
 import { USER_AGENT } from "./user-agent";
 
 export const API_ORIGIN = "https://api.vrata.tg";
-export const STAGING_API_ORIGIN =
-  "https://llm-billing-staging.ai.vladimirlebe.dev";
 export const BOT_URL = "https://vrata.tg/bot";
 
 export class CredentialError extends Error {}
@@ -58,12 +56,11 @@ export class GatewayClient {
   constructor(
     private readonly request: typeof fetch = fetch,
     private readonly log: (message: string) => void = () => {},
-    private readonly origin: string = API_ORIGIN,
   ) {}
 
   async models(key: string, signal: AbortSignal): Promise<readonly unknown[]> {
     signal.throwIfAborted();
-    const endpoint = `${this.origin}/v1/models`;
+    const endpoint = `${API_ORIGIN}/v1/models`;
     const entries: unknown[] = [];
     for (const protocol of ["openai", "anthropic"] as const) {
       signal.throwIfAborted();
@@ -103,7 +100,7 @@ export class GatewayClient {
 
   async account(key: string, signal: AbortSignal): Promise<AccountSnapshot> {
     signal.throwIfAborted();
-    const endpoint = `${this.origin}/v1/account`;
+    const endpoint = `${API_ORIGIN}/v1/account`;
     this.log(`GET ${endpoint} — чтение счёта`);
     const response = await this.request(endpoint, {
       method: "GET",

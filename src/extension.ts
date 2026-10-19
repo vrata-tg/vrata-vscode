@@ -13,13 +13,7 @@ import {
   Credentials,
   SECRET_KEY,
 } from "./credentials";
-import {
-  API_ORIGIN,
-  STAGING_API_ORIGIN,
-  BOT_URL,
-  CredentialError,
-  GatewayClient,
-} from "./gateway";
+import { API_ORIGIN, BOT_URL, CredentialError, GatewayClient } from "./gateway";
 import { VrataPanel, registerPanelCommands } from "./panel";
 import { resolveReasoning } from "./reasoning";
 import { modelPickerTabsEnabled } from "./welcome";
@@ -274,28 +268,6 @@ async function activateWithOutput(
     );
   }
   command("vrata.showLogs", () => output.show(true));
-  command("vrata.debugStaging", async () => {
-    const staging = new GatewayClient(
-      fetch,
-      (message) => output.info("[staging] " + message),
-      STAGING_API_ORIGIN,
-    );
-    await credentials.run(async (session) => {
-      const catalog = await staging.models(session.key, session.signal);
-      if (!session.isCurrent()) throw new CredentialOperationCancelled();
-      const { models, unavailable } = projectCatalog(catalog);
-      output.info(
-        "[staging] Каталог получен: доступно моделей " +
-          models.length +
-          "; пропущено " +
-          unavailable.length +
-          ".",
-      );
-      await vscode.window.showInformationMessage(
-        "Staging-проверка завершена. Доступно моделей: " + models.length + ".",
-      );
-    });
-  });
   let editing = false;
   command("vrata.setApiKey", async (keys) => {
     if (editing) return;

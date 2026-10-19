@@ -273,6 +273,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   let directMessages = false;
   let directResponses = false;
   global.fetch = async (url, options) => {
+    assert.ok(url.startsWith("https://api.vrata.tg/"));
     requests.push({ url, options });
     if (fetchFailure) throw fetchFailure;
     if (options.method === "POST" && url.endsWith("/v1/responses"))
@@ -521,13 +522,6 @@ test("native commands, masked input, silent discovery and secret events", async 
     "Пополнить баланс / открыть бот",
     "Как начать работу",
   ]);
-  await commands.get("vrata.debugStaging")();
-  assert.equal(
-    requests.filter((request) =>
-      request.url.startsWith("https://llm-billing-staging.ai.vladimirlebe.dev"),
-    ).length,
-    2,
-  );
   const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
@@ -548,7 +542,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(discovered[0][0].capabilities.imageInput, true);
   assert.equal(
     requests.length,
-    5,
+    3,
     "discovery must reuse the catalog returned by key validation",
   );
   await provider.provideLanguageModelChatResponse(
@@ -580,7 +574,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   input = undefined;
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
-  assert.equal(requests.length, 7);
+  assert.equal(requests.length, 5);
   input = "invalid";
   await commands.get("vrata.setApiKey")();
   assert.equal(values.get("vrata.apiKey"), "arbitrary-format");
@@ -879,31 +873,6 @@ test("native commands, masked input, silent discovery and secret events", async 
     /gpt-6-astra|aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/,
   );
 
-  let finishStaging, stagingStarted, stagingSignal;
-  let stagingCalls = 0;
-  const stagingReady = new Promise((resolve) => {
-    stagingStarted = resolve;
-  });
-  global.fetch = async (url, options) => {
-    if (!url.includes("staging")) return normalFetch(url, options);
-    stagingCalls++;
-    stagingSignal = options.signal;
-    stagingStarted();
-    return new Promise((resolve) => {
-      finishStaging = resolve;
-    });
-  };
-  const noticeCount = notices.length;
-  const errorCount = errors.length;
-  const lateStaging = commands.get("vrata.debugStaging")();
-  await stagingReady;
-  await credentials.replace("synthetic-staging-new-key");
-  assert.equal(stagingSignal.aborted, true);
-  finishStaging(new Response('{"data":[]}'));
-  await lateStaging;
-  assert.equal(stagingCalls, 1);
-  assert.equal(notices.length, noticeCount);
-  assert.equal(errors.length, errorCount);
   global.fetch = normalFetch;
   await commands.get("vrata.removeApiKey")();
   await assert.rejects(
