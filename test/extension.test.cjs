@@ -539,7 +539,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     label: "Врата AI",
     order: 0,
   });
-  assert.equal(discovered[0][0].maxInputTokens, 120000);
+  assert.equal(discovered[0][0].maxInputTokens, 112000);
+  assert.equal(
+    discovered[0][0].maxInputTokens + discovered[0][0].maxOutputTokens,
+    120000,
+  );
   assert.equal(discovered[0][0].capabilities.imageInput, true);
   assert.equal(
     requests.length,

@@ -54,7 +54,8 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
       reason = "имя или семейство не подтверждены";
     else if (
       !limit(metadata.max_input_tokens) ||
-      !limit(metadata.max_output_tokens)
+      !limit(metadata.max_output_tokens) ||
+      metadata.max_input_tokens <= metadata.max_output_tokens
     )
       reason = "пределы входа или ответа не подтверждены";
     if (reason) {
@@ -73,7 +74,10 @@ export function projectCatalog(entries: readonly unknown[]): CatalogProjection {
       name: metadata.name as string,
       family: metadata.family as string,
       version: id,
-      maxInputTokens: metadata.max_input_tokens as number,
+      // The catalog's max_input_tokens is the full context, including output.
+      maxInputTokens:
+        (metadata.max_input_tokens as number) -
+        (metadata.max_output_tokens as number),
       maxOutputTokens: metadata.max_output_tokens as number,
       capabilities: {
         toolCalling: true,

@@ -35,8 +35,8 @@ test("projects verified OpenAI and Anthropic public IDs without inventing capabi
   assert.deepEqual(
     result.models.map((model) => [model.maxInputTokens, model.maxOutputTokens]),
     [
-      [120_000, 8_000],
-      [100_000, 4_096],
+      [112_000, 8_000],
+      [95_904, 4_096],
     ],
   );
   assert.deepEqual(result.models[0].capabilities, {
@@ -44,6 +44,55 @@ test("projects verified OpenAI and Anthropic public IDs without inventing capabi
     imageInput: true,
   });
   assert.deepEqual(result.unavailable, []);
+});
+
+test("reserves output within the catalog context window for every transport", () => {
+  for (const metadata of [
+    { protocol: "openai", verified_transport: "chat_completions" },
+    { protocol: "openai", verified_transport: "responses" },
+    { protocol: "anthropic", verified_transport: "messages" },
+  ]) {
+    const result = projectCatalog([
+      entry("model", {
+        ...metadata,
+        max_input_tokens: 200_000,
+        max_output_tokens: 64_000,
+      }),
+      entry("one-input-token", {
+        ...metadata,
+        max_input_tokens: 64_001,
+        max_output_tokens: 64_000,
+      }),
+      entry("no-input-budget", {
+        ...metadata,
+        max_input_tokens: 64_000,
+        max_output_tokens: 64_000,
+      }),
+      entry("negative-input-budget", {
+        ...metadata,
+        max_input_tokens: 32_000,
+        max_output_tokens: 64_000,
+      }),
+    ]);
+    assert.deepEqual(
+      result.models.map((model) => [
+        model.id,
+        model.maxInputTokens,
+        model.maxOutputTokens,
+      ]),
+      [
+        ["model", 136_000, 64_000],
+        ["one-input-token", 1, 64_000],
+      ],
+    );
+    assert.equal(
+      result.models[0].maxInputTokens + result.models[0].maxOutputTokens,
+      200_000,
+    );
+    assert.equal(result.unavailable.length, 2);
+    assert.equal(result.transports["no-input-budget"], undefined);
+    assert.equal(result.transports["negative-input-budget"], undefined);
+  }
 });
 
 test("only explicitly confirmed image support reaches the VS Code capability", () => {
