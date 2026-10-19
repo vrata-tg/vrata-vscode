@@ -1,138 +1,197 @@
-# Vrata VS Code provider spike
+# Врата AI для VS Code
 
-Extension repository for
-[ai-billing-gateway #335](https://github.com/v-lebedev/ai-billing-gateway/issues/335).
-The package lives at this repository's root. Follow-up work is tracked in the
-gateway repository: [onboarding #336](https://github.com/v-lebedev/ai-billing-gateway/issues/336),
-[server API #337](https://github.com/v-lebedev/ai-billing-gateway/issues/337),
-[catalog #338](https://github.com/v-lebedev/ai-billing-gateway/issues/338) and
-[transport #339](https://github.com/v-lebedev/ai-billing-gateway/issues/339).
+Устанавливаемое расширение для VS Code **1.104.0+**. Введите существующий
+API-ключ Врата AI: адрес сервиса вводить не требуется.
 
-Imported from `ai-billing-gateway` commit
-`ddf80125859bb606a6a35fdae425461a21baccee`, directory
-`prototypes/vscode-provider`; this repository is now the canonical code location.
+1. Установите `vrata-ai-0.1.41.vsix` через **Extensions → Install from VSIX…**.
+2. На экране начала работы нажмите **Вставить API-ключ**. Если ключа ещё нет,
+   нажмите **Открыть бота Врата AI**.
+3. Управляйте подключением через панель **Врата AI** в Activity Bar: баланс,
+   квота и действия. Нажмите строку баланса, чтобы открыть бота; статус
+   показывается, когда подключение требует внимания.
+4. После сохранения ключа нажмите **Выбрать модель** в уведомлении или панели Врата AI. Откройте выбор модели и выберите нужную модель **Врата AI**.
+5. Используйте штатный чат VS Code; отдельный чат расширения не требуется.
 
-Development-only provider for the built-in **local Agent** in stable VS Code
-1.138.0. Uses the stable Language Model Chat Provider API and one Chat
-Completions adapter for `gpt-5.6-terra` and `claude-sonnet-5`. VS Code owns tools,
-permissions, history, file edits and terminal execution. No custom agent loop.
+## Как расширение работает с чатом
 
-This is a reproducible developer probe, not the installable MVP. The two model
-IDs and 60,000 input / 4,096 output token caps are probe settings, not a catalog
-or verified model maxima. Token estimation (UTF-8 bytes / 3) is approximate and
-has no billing authority. Text and text tool results only; images, opaque
-reasoning and other part types fail explicitly. No retries. Registration is
-restricted to development/test extension hosts. SecretStorage and production
-onboarding belong to #336; dynamic metadata to #337/#338.
+Расширение регистрирует Language Model Provider: модели Врат AI появляются
+в штатном чате VS Code и доступны его агенту с инструментами редактора.
+Welcome содержит актуальные инструкции по выбору модели для вашей версии VS Code.
+Интерфейс выбора модели принадлежит VS Code, а расширение предоставляет доступные
+модели через стандартный API. Отдельный webview-чат не создаётся.
 
-## Offline checks (no credentials or paid calls)
+Reasoning level, если он сохранён в профиле, читается из
+`modelOptions.reasoningEffort`. В payload Chat Completions он передаётся как
+`reasoning_effort`, а в Responses — как `reasoning.effort`. Транспорт Messages
+пока использует серверное значение по умолчанию. Настройка не отображается в
+Activity Bar.
+
+Фактические модель, транспорт и reasoning_effort каждого запроса пишутся
+в журнал **Output → Врата AI**.
+Баланс автоматически запрашивается после каждого завершившегося запроса,
+включая запросы, завершившиеся ошибкой.
+
+Изображения передаются в модели, для которых серверный каталог явно подтверждает
+`supports_images: true`: сейчас это `claude-fable-5-1`, `claude-haiku-4-5`,
+`claude-opus-4-8` и `gpt-6-astra`. Для `gpt-6.1-sol` сервер пока не заполняет
+этот флаг, но сам маршрут принимает тот же image payload, поэтому расширение также
+объявляет для него поддержку vision. В штатном чате добавьте изображение к сообщению;
+для остальных моделей расширение сохраняет текстовый режим.
+
+Выпуск 0.1.7 переводит обычные запросы на production API `https://api.vrata.tg`. Для диагностики staging добавлена отдельная команда **Врата AI: Проверить staging-каталог**; она выполняет только read-only проверку и не меняет обычный маршрут.
+
+Выпуск 0.1.6 добавляет выбор моделей по серверному каталогу из
+[#337](https://github.com/v-lebedev/ai-billing-gateway/issues/337) и
+[#338](https://github.com/v-lebedev/ai-billing-gateway/issues/338).
+Этот выпуск также добавляет потоковые инструменты [#339](https://github.com/v-lebedev/ai-billing-gateway/issues/339) и баланс [#340](https://github.com/v-lebedev/ai-billing-gateway/issues/340).
+Модель отображается только при подтверждённых лимитах входа и ответа,
+вызове инструментов и транспорте Chat Completions, Responses или Messages. Для
+Messages расширение выбирает `/v1/messages`, для Responses — `/v1/responses`, а
+для Chat Completions — `/v1/chat/completions`; каждый маршрут получает свой
+формат сообщений и потокового ответа. Изображения пока не
+объявляются. Причины пропуска моделей видны при наведении на индикатор Врат AI
+в строке состояния. Удалённые или отключённые на сервере модели отсутствуют в
+новом каталоге; устаревший список не позволяет обойти серверные ограничения.
+
+Уведомление об успешном сохранении не блокирует повторный ввод ключа.
+Каталог, полученный при проверке, используется пять минут. После этого он
+обновляется при следующем обнаружении моделей. При ошибке запрос не повторяется
+чаще раза в минуту; список того же ключа остаётся доступен с пометкой
+«Каталог устарел». При
+восстановлении подключения параллельные обращения используют один запрос.
+Ключ другого аккаунта никогда не получает старый каталог.
+
+Оценка токенов выполняется локально: не меньше числа UTF-8 байтов текста,
+а для структурированных сообщений учитывает JSON-представление, роли, аргументы
+и результаты инструментов. Она намеренно завышает размер для кода и кириллицы.
+Это граница для управления контекстом, а не финансовый учёт токенов; платный
+запрос для подсчёта не выполняется.
+
+Ключ сохраняется только через VS Code SecretStorage. Отмена ввода и неудачная
+проверка замены сохраняют прежний ключ. Удаление отключает локальный профиль,
+но не отзывает ключ на сервере. Буфер обмена читается только самим редактором,
+когда вы вставляете текст в поле. Настройки рабочей папки и переменные окружения
+не могут подменить адрес сервиса.
+
+Проверка — два `GET /v1/models` (OpenAI- и Anthropic-вид) на зафиксированном в расширении адресе сервиса с Bearer, без генерации, повторов
+или переходов по redirect. Нулевой баланс не мешает проверке действительного
+ключа. Уведомления не включают ключ, содержимое ответа сервера или сетевую диагностику;
+подробности исключений доступны в Output.
+После смены ключа отменяются запросы старой сессии, очищается её кэш и
+уведомляется провайдер; поздние ответы не применяются к новой сессии.
+
+VS Code может отправлять фоновые служебные запросы — например, для автоматического
+названия чата. Они тоже могут расходовать баланс Врат AI. Если настройка доступна
+в вашей версии, в **User Settings** задайте
+`chat.byokUtilityModelDefault` = `mainAgent` (**Main Agent Model**), чтобы такие
+запросы использовали выбранную модель основного агента Врата AI. Это не отдельный
+чат и не новый ключ. Расширение открывает настройку по явному действию и не меняет
+её автоматически. Если настройка отсутствует, команда сообщает об этом. Workspace Trust и корпоративные BYOK policies остаются в силе.
+
+## Совместимость
+
+Минимум — **VS Code 1.104.0**: в этой версии появился стабильный
+[Language Model Chat Provider API](https://code.visualstudio.com/updates/v1_104#_language-model-chat-provider-api).
+Компиляция использует типы именно 1.104.0, чтобы случайно не добавить API более
+нового редактора. CI устанавливает VSIX и проверяет активацию/SecretStorage
+после перезапуска на **1.104.0, 1.135.0 и 1.138.0** (Linux).
+
+На ранних версиях доступ к встроенному чату может требовать входа в GitHub и
+подходящего плана Copilot; расширение не снимает ограничения самого редактора.
+Управление ключом доступно также через строку состояния и палитру команд.
+В палитре оставлены основные действия; служебные команды обслуживания и
+диагностики доступны через соответствующие уведомления.
+Работа без GitHub sign-in подтверждена для onboarding; полный агентный сценарий
+без подписки ранее проверен на 1.138.0 в отчёте #335, а не на всех версиях.
+
+## Выпуск новой версии
+
+Откройте **Actions → Release → Run workflow**, выберите **main** и укажите
+новую стабильную версию без `v`, например `0.1.42`. Workflow обновит версию в
+`package.json`, `package-lock.json` и текущую ссылку на VSIX в README, выполнит
+`npm run check`, соберёт VSIX, создаст коммит и тег `v<версия>`, затем опубликует
+GitHub Release с автоматически сформированными release notes и файлом
+`vrata-ai-<версия>.vsix`. Публикация использует встроенный `GITHUB_TOKEN`.
+
+Версия должна быть выше текущей. Выпуски выполняются последовательно. Если
+публикация прервалась после отправки тега, повторите запуск с той же версией:
+workflow соберёт пакет из исходного тега и завершит черновик релиза. Уже
+опубликованный релиз остаётся без изменений.
+
+Если `main` обновится во время проверок, атомарный push отклонит и коммит,
+и тег. Начните новый запуск с той же версией, чтобы проверить актуальный `main`.
+Правила репозитория должны разрешать GitHub Actions отправлять коммиты версий
+в `main`, создавать теги `v*` и использовать `contents: write`.
+
+## Разработка и проверки
 
 ```sh
 npm ci
-npm test
+npm run check
+npm run package
 ```
 
-The transport tests use a local HTTP server, including fragmented streaming,
-interleaved tool calls, cancellation, HTTP errors and incomplete streams. CI
-runs these checks, then packages the extension as a VSIX and uploads it as the
-`vrata-provider-spike-vsix` artifact. Download it from **Actions → CI → run →
-Artifacts**. CI runs on pushes to `main`, pull requests, and manual dispatch.
-The fixture is intentionally broken;
-its test becomes green only after the agent fixes it.
+Для разработки нужен Node.js 22. `npm run check` выполняет проверку типов,
+ESLint, проверку форматирования и тесты. `npm run format` применяет Prettier.
+Нажмите **F5** для запуска Extension Development Host с папкой `fixture`:
+задача `npm: watch` пересобирает TypeScript, доступны точки останова.
 
-To build the same package locally after `npm ci`, run `npm run package`.
-It produces `vrata-provider-spike-<version>.vsix`. This remains a development-only
-probe: installing the VSIX does not enable the provider in a normal extension host.
+Инструкции для агентов — в [AGENTS.md](AGENTS.md); [пакет skills](.agents/README.md) перенесён из основного репозитория
+`ai-billing-gateway`. `vrata-vscode-dev` задаёт маршрут разработки, а planning,
+review, simplification и GitHub workflow используют полные локальные пакеты.
+CI повторяет `check`, собирает VSIX и проверяет его в трёх версиях VS Code.
+Workflow можно запустить вручную; JSON-результаты и логи host tests
+сохраняются и при ошибке.
 
-For a real stable extension-host check, use isolated empty profile/extension
-directories and the absolute path to this package:
+Пакет TypeScript находится в корне этого репозитория. Stable API, vendor `vrata`,
+extension ID `vrata.vrata-ai`; без proposed API и собственного webview-чата.
+VSIX содержит только manifest, README, walkthrough media и скомпилированный код.
+`@vscode/vsce` — только build dependency; runtime dependencies отсутствуют.
+
+Unit/integration tests покрывают lifecycle, ошибки хранения/проверки, смену
+аккаунта, запоздалые ответы, native UI commands и read-only HTTP через локальный
+сервер, а также оба потоковых транспорта и циклы инструментов.
+
+Для проверки реального SecretStorage и production-активации установите VSIX в
+изолированные каталоги, затем запустите host test дважды с тем же профилем:
 
 ```sh
-code --user-data-dir /tmp/vrata-host-profile \
-  --extensions-dir /tmp/vrata-host-extensions \
-  --extensionDevelopmentPath "$PWD" \
-  --extensionTestsPath "$PWD/test/host.cjs"
+code --user-data-dir /tmp/vrata-profile --extensions-dir /tmp/vrata-extensions \
+  --install-extension "$PWD/vrata-ai-0.1.6.vsix"
+VRATA_HOST_PHASE=write VRATA_HOST_RESULT=/tmp/vrata-write.json code --user-data-dir /tmp/vrata-profile \
+  --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
+VRATA_HOST_PHASE=read VRATA_HOST_RESULT=/tmp/vrata-read.json code --user-data-dir /tmp/vrata-profile \
+  --extensions-dir /tmp/vrata-extensions --extensionDevelopmentPath "$PWD/test/host-extension"
 ```
 
-This test starts its own loopback fake gateway and never reads live credentials.
-It checks provider discovery, signed-out GitHub state, real VS Code tool-part
-serialization and a parameterless tool request. No proposed API flags.
+Не добавляйте `--extensionTestsPath`: VS Code включает для него in-memory storage,
+который не проверяет сохранение после перезапуска. Тестовое расширение запускает
+проверку автоматически и закрывает редактор; проверьте `passed: true` в обоих JSON-файлах результата.
 
-## Release a new version
+Host test использует только синтетический ключ в SecretStorage тестового
+расширения и loopback HTTP. Реальные credentials и платные запросы не нужны.
+На Linux нужен доступный системный keyring; не используйте plaintext password
+store для настоящего ключа. Windows/macOS и Remote/WSL пока не проверены.
 
-Open **Actions → Release → Run workflow**, select **main**, and enter the next
-stable version without `v`, for example `0.0.2`. The workflow updates
-`package.json` and `package-lock.json`, runs the offline tests, builds the VSIX,
-then commits the version, pushes an annotated `v0.0.2` tag, and publishes a
-GitHub Release with generated release notes and the VSIX attached. No Marketplace
-token or other custom secret is needed; it uses the repository's `GITHUB_TOKEN`.
+История и техническая база:
+[отчёт #335](https://github.com/v-lebedev/vrata-docs/blob/main/reports/2026-09-23/vscode-335/report.md).
 
-The version must be greater than the current version. Releases run sequentially.
-If publication fails after the tag was pushed, rerun with the same version: the
-workflow builds from the existing tag and resumes the draft release. A published
-release is left unchanged. If `main` advances during the checks, the atomic push
-fails without updating the remote branch or creating the tag; start a new run
-with the same version to test the latest `main`.
+Автоматический Linux-прогон с изолированными profile/keyring (нужны `xvfb`,
+`xauth`, `dbus-x11`, `gnome-keyring`; путь результата должен быть новым):
 
-Repository rules must allow GitHub Actions to push release commits to `main` and
-create `v*` tags, and allow `contents: write` for `GITHUB_TOKEN`. A rule requiring
-pull requests for every change to `main` will block this workflow unless the
-release bot is allowed to bypass it.
+```sh
+VRATA_HOST_VERSION=1.135.0 dbus-run-session -- xvfb-run -a bash test/run-host.sh \
+  /path/to/VSCode-linux-x64/code "$PWD/vrata-ai-0.1.6.vsix" /tmp/vrata-host-1.135
+```
 
-Releases distribute the development-only probe through GitHub Releases; they do
-not publish to the VS Code Marketplace or enable it in a normal extension host.
+## Диагностика подключения
 
-## Live smoke (explicit opt-in)
+Нажмите **Открыть журнал** в уведомлении об ошибке или выполните команду
+**Врата AI: Открыть журнал**. Канал **Врата AI** в Output содержит исходную
+ошибку с уровнем **error**: сообщение, стек, `cause`, `AggregateError` и дополнительные
+поля, включая неизвестные коды. Исключения перехватываются на уровне активации,
+команд, событий хранилища и методов провайдера. GatewayClient пропускает их
+наверх без подмены и повторного журналирования. Модельные ошибки классифицируются по HTTP-статусу и безопасным кодам; сырые ответы upstream не попадают в уведомления и журнал.
 
-Use a dedicated test account/key with an explicitly agreed **server-enforced**
-wallet/quota budget (the reference run used at most 50 RUB). Never use a master
-key. Keep live credentials outside the repository, settings, command arguments
-and logs. Supply `VRATA_SPIKE_KEY` through the launching process environment
-from a protected secret source. The extension reads it once at activation;
-restart the development host to change it. Environment handling is only for
-this developer probe; it is not the MVP credential-storage design.
-
-Set `VRATA_SPIKE_ENDPOINT` to the full endpoint. Reference staging:
-`https://llm-billing-staging.ai.vladimirlebe.dev/v1/chat/completions`.
-Canonical production address is `https://api.vrata.tg/v1/chat/completions`;
-production was not exercised by this probe.
-
-1. Copy `fixture/` to a disposable folder. Verify `node sum.test.js` fails.
-2. Launch stable Code with fresh `--user-data-dir`, `--extensions-dir`,
-   `--extensionDevelopmentPath` and the disposable folder as the workspace.
-   Do not pass `--extensionTestsPath` for live work.
-3. Grant trust only to that fixture through Workspace Trust. Do not disable
-   trust or override corporate BYOK policies. Stay signed out of GitHub.
-4. Set `chat.byokUtilityModelDefault` to `mainAgent` in **user** settings.
-   Utility requests (e.g. titles) can also incur gateway charges. The selected
-   agent model does not normally control these unless configured.
-5. In local Agent mode choose `gpt-5.6-terra (spike)` from **Vrata Spike**.
-   Ask: “Read sum.js and sum.test.js. Fix sum.js, run node sum.test.js in the
-   terminal, and report the result. Do not change tests.” Approve that terminal
-   command through VS Code. Check the actual file, unchanged test and all three
-   assertions independently. Keep the edit.
-6. Restore the broken fixture and repeat in a **new chat** with
-   `claude-sonnet-5 (spike)`. Do not reuse the previous conversation's results.
-7. Ask for a long text response, press Stop while text is streaming, and inspect
-   sanitized request/accounting evidence: one cancelled request, no automatic
-   retry, no lingering hold. Explicitly continue in the same chat and verify a
-   new successful request. Repeat for each family.
-8. Record versions, HTTP statuses, stream completion, tool calls/results,
-   independent test results, accounting totals and every failed attempt. Revoke
-   the disposable key and verify all reservations settle.
-
-Before the provider run, test the same fixture through the built-in **Custom
-Endpoint** in a separate clean profile. Use Chat Completions for OpenAI. In
-1.138.0 that provider adds `n: 1`, which the current gateway's Chat → Messages
-converter rejects; use its Messages API option for the Anthropic baseline.
-Our minimal provider omits `n`, and supplies an empty object schema when a
-VS Code tool has no input parameters.
-
-The Linux/Xvfb reference host ran as root with Electron's `--no-sandbox`,
-`--disable-gpu`, `--disable-dev-shm-usage` flags. These are container launch
-constraints, not proposed extension APIs. Normal desktop runs should use their
-usual sandbox. Windows, macOS, Remote, WSL, Web and Agent Host sessions are not
-validated here.
-
-Decision, API inventory, evidence and limitations:
-[report in vrata-docs](https://github.com/v-lebedev/vrata-docs/blob/main/reports/2026-09-23/vscode-335/report.md).
+Точные значения доступных обработчику API-ключей (текущего, вводимого и ключа запроса) маскируются как `[REDACTED]`.
+Для ошибок загрузки каталога и хранилища исходный стек сохраняется. Для модельного потока записывается безопасный код, статус и request ID без тела ответа. Команда **Врата AI: Скопировать диагностику** копирует только версии, ID модели, код и request ID. Баланс счёта виден в строке состояния; заданный остаток квоты ключа виден в панели Врата AI и подсказке. Обновление выполняется после подключения и каждого завершившегося запроса без периодического опроса.

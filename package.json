@@ -1,35 +1,249 @@
 {
-  "name": "vrata-provider-spike",
-  "displayName": "Vrata Provider Spike",
-  "description": "Development-only stable API probe for issue 335",
-  "version": "0.0.1",
+  "name": "vrata-ai",
+  "displayName": "Врата AI",
+  "description": "Подключение к Врата AI по API-ключу через штатный интерфейс VS Code.",
+  "icon": "media/vrata-extension.png",
+  "version": "0.1.41",
   "publisher": "vrata",
   "private": true,
   "engines": {
-    "vscode": "^1.138.0"
+    "vscode": "^1.104.0"
   },
   "main": "./dist/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onLanguageModelChatProvider:vrata"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vrata",
+          "title": "Врата AI",
+          "icon": "media/vrata.svg"
+        }
+      ]
+    },
+    "views": {
+      "vrata": [
+        {
+          "id": "vrata.panel",
+          "name": "Врата AI",
+          "type": "tree"
+        }
+      ]
+    },
     "languageModelChatProviders": [
       {
         "vendor": "vrata",
-        "displayName": "Vrata Spike"
+        "displayName": "Врата AI",
+        "managementCommand": "vrata.manage"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "vrata.openChat",
+          "group": "navigation",
+          "when": "view == vrata.panel"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vrata.removeApiKey",
+          "when": "false"
+        },
+        {
+          "command": "vrata.refreshModels",
+          "when": "false"
+        },
+        {
+          "command": "vrata.selectModel",
+          "when": "false"
+        },
+        {
+          "command": "vrata.selectReasoning",
+          "when": "false"
+        },
+        {
+          "command": "vrata.copyDiagnostics",
+          "when": "false"
+        },
+        {
+          "command": "vrata.utilitySettings",
+          "when": "false"
+        },
+        {
+          "command": "vrata.showLogs",
+          "when": "false"
+        },
+        {
+          "command": "vrata.debugStaging",
+          "when": "false"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "vrata.manage",
+        "title": "Управление подключением",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.setApiKey",
+        "title": "Вставить / заменить API-ключ",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.removeApiKey",
+        "title": "Удалить локальный ключ",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.refreshModels",
+        "title": "Обновить список моделей",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.selectModel",
+        "title": "Выбрать модель",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.selectReasoning",
+        "title": "Выбрать reasoning level",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.openChat",
+        "title": "Открыть чат",
+        "category": "Врата AI",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "vrata.openModelPicker",
+        "title": "Выбрать модель в чате",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.copyDiagnostics",
+        "title": "Скопировать диагностику",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.getApiKey",
+        "title": "Открыть бота Врата AI",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.openWalkthrough",
+        "title": "Как начать работу",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.utilitySettings",
+        "title": "Настройки служебных запросов",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.showLogs",
+        "title": "Открыть журнал",
+        "category": "Врата AI"
+      },
+      {
+        "command": "vrata.debugStaging",
+        "title": "Проверить staging-каталог",
+        "category": "Врата AI"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "vrata.welcome",
+        "title": "Врата AI",
+        "description": "",
+        "steps": [
+          {
+            "id": "key",
+            "title": "Вставьте API-ключ",
+            "description": " \n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
+            "media": {
+              "markdown": "media/connect-key.md"
+            },
+            "completionEvents": [
+              "onContext:vrata.connected"
+            ]
+          },
+          {
+            "id": "model-legacy",
+            "title": "Найдите Врата AI в Other Models",
+            "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "when": "!vrata.modelPickerTabs",
+            "media": {
+              "markdown": "media/connect-legacy.md"
+            }
+          },
+          {
+            "id": "model-tabs",
+            "title": "Выберите модель Врата AI",
+            "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
+            "when": "vrata.modelPickerTabs",
+            "media": {
+              "markdown": "media/connect-tabs.md"
+            }
+          },
+          {
+            "id": "utility",
+            "title": "Для чего нужна служебная модель",
+            "description": " \n[Настроить служебную модель](command:vrata.utilitySettings)",
+            "media": {
+              "markdown": "media/utility.md"
+            }
+          }
+        ]
       }
     ]
   },
   "scripts": {
-    "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc",
-    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --skip-license",
-    "test": "npm run build && node --test test/*.test.cjs"
+    "test": "npm run build && node --test test/*.test.cjs",
+    "vscode:prepublish": "npm run build",
+    "package": "vsce package --no-dependencies",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "test:host": "bash test/run-host.sh"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "22.19.0",
-    "@types/vscode": "1.138.0",
+    "@types/vscode": "1.104.0",
     "@vscode/vsce": "4.0.0",
-    "typescript": "5.9.3"
+    "eslint": "10.11.0",
+    "globals": "16.5.0",
+    "prettier": "3.9.9",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/v-lebedev/vrata-vscode.git"
+  },
+  "license": "UNLICENSED",
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Для подключения Врат AI настройте рабочее пространство как доверенное."
+    },
+    "virtualWorkspaces": false
   }
 }

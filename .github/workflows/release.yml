@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'New version without v (for example, 0.0.2)'
+        description: "New version without v (for example, 0.1.42)"
         required: true
         type: string
 
@@ -25,7 +25,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       RELEASE_TAG: v${{ inputs.version }}
-      VSIX_PATH: vrata-provider-spike-${{ inputs.version }}.vsix
+      VSIX_PATH: vrata-ai-${{ inputs.version }}.vsix
     steps:
       - name: Require main branch
         run: test "$GITHUB_REF" = refs/heads/main
@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
 
       - name: Prepare version
@@ -45,7 +45,7 @@ jobs:
         shell: bash
         run: |
           if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo '::error::Version must be a stable SemVer such as 0.0.2, without v.'
+            echo '::error::Version must be a stable SemVer such as 0.1.42, without v.'
             exit 1
           fi
 
@@ -64,13 +64,18 @@ jobs:
             console.error('New version must be greater than the current package version.');
             process.exit(1);
           }
+          const fs = require('node:fs');
+          const previous = require('./package.json').version;
+          const readme = fs.readFileSync('README.md', 'utf8');
+          fs.writeFileSync('README.md', readme.replaceAll(
+            `vrata-ai-${previous}.vsix`, `vrata-ai-${process.env.RELEASE_VERSION}.vsix`));
           NODE
             npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
             echo 'existing=false' >> "$GITHUB_OUTPUT"
           fi
 
       - run: npm ci
-      - run: npm test
+      - run: npm run check
 
       - name: Package extension
         run: npm run package -- --out "$VSIX_PATH"
@@ -78,7 +83,7 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v7
         with:
-          name: vrata-provider-spike-${{ inputs.version }}
+          name: vrata-ai-${{ inputs.version }}
           path: ${{ env.VSIX_PATH }}
           if-no-files-found: error
 
@@ -87,8 +92,8 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- package.json package-lock.json
-          git commit -m "chore: release $RELEASE_TAG" -- package.json package-lock.json
+          git add -- package.json package-lock.json README.md
+          git commit -m "chore: release $RELEASE_TAG" -- package.json package-lock.json README.md
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
           # Reject both updates if main advanced while checks were running.
           git push --atomic origin HEAD:refs/heads/main "refs/tags/$RELEASE_TAG"
