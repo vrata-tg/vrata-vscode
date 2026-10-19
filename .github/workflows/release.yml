@@ -65,7 +65,6 @@ jobs:
           }
           NODE
             npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
-            node -e 'const fs = require("node:fs"); fs.writeFileSync("README.md", fs.readFileSync("README.md", "utf8").replace(/vrata-ai-\d+\.\d+\.\d+\.vsix/g, `vrata-ai-${process.env.RELEASE_VERSION}.vsix`))'
             echo 'existing=false' >> "$GITHUB_OUTPUT"
           fi
 
