@@ -2,6 +2,11 @@
 
 ## Development
 
+Before development, fetch `origin`, update the working branch from its upstream,
+and synchronize it with current `origin/main` as described in the development
+skill's working-tree checklist. Start new branches from current `origin/main`.
+Preserve local edits; do not use a reset or force push to synchronize.
+
 Use Node.js 22 and `npm ci`. Read `package.json` for the commands and README for
 host-test prerequisites. Run `npm run check` and `npm run package` before shipping.
 Use F5 to launch the extension with the fixture workspace and TypeScript watch.
@@ -49,6 +54,11 @@ provides direct entry prompts.
   is `vrata-ai-<version>.vsix`.
 
 ## Delivery
+
+Always finish implementation tasks by committing, pushing a feature branch and
+opening or updating its pull request against `main`, without asking for another
+confirmation. Do not stop at local changes. Include the PR URL and verification
+results in the final response. Never push agent changes directly to `main`.
 
 Review the whole PR diff and run the relevant host compatibility checks when
 changing activation, the manifest, packaging or SecretStorage. Report which

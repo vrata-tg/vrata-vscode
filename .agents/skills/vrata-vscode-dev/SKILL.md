@@ -52,10 +52,19 @@ permit skipping required verification or a real user decision.
 
 ## 1. Establish the working tree
 
-1. Reuse a suitable task-owned branch/worktree when already established.
-2. For new work, fetch `origin` and start from current `origin/main`.
-3. Create a meaningful branch in an isolated worktree only when needed.
-4. Inspect status, current files, callers and tests before planning.
+1. Before development, inspect `git status` and the current branch, then run
+   `git fetch origin --prune`. Preserve local edits and others' work; do not
+   discard changes, reset branches or force push to synchronize.
+2. For new work, update a clean local `main` with `git pull --ff-only origin main`
+   before creating the task branch. If `main` is in use in another worktree,
+   create the task branch directly from freshly fetched `origin/main`.
+3. Reuse a suitable task-owned branch/worktree when already established. If it
+   has an upstream, run `git pull --ff-only` first. Resolve any divergence
+   without overwriting remote commits. Merge current `origin/main` into the
+   task branch before development when it is not already an ancestor. Resolve
+   conflicts and verify the integrated result before making new changes.
+4. Create a meaningful branch in an isolated worktree only when needed.
+5. Read the updated instructions, current files, callers and tests before planning.
 
 If existing work already satisfies the request, verify it instead of rebuilding
 it.
@@ -224,6 +233,11 @@ paid generation for routine verification.
 
 For implementation-only or review-only requests, return the verified result
 to the caller at that boundary. When delivering a PR:
+
+Fetch `origin` again before the final checks and push. If `origin/main` has
+advanced beyond the task branch's base, merge it into the task branch, resolve
+conflicts and rerun the affected checks before pushing. A failed fast-forward
+or push is a signal to fetch and reconcile, never to force push.
 
 1. stage only intended files and commit conventionally;
 2. push the feature branch and update its existing PR, or open one against

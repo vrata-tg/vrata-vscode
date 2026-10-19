@@ -7,7 +7,9 @@ Earlier selections and authorizations remain valid across stages.
 ## Start or implement a change
 
 Read AGENTS.md and .agents/skills/vrata-vscode-dev/SKILL.md. Select the route
-for this task, inspect the affected files, and complete the requested work.
+for this task. Before development, follow its working-tree checklist to fetch
+and pull the repository, synchronize with current origin/main, and reread the
+updated instructions. Inspect the affected files and complete the requested work.
 
 ## Plan only
 
