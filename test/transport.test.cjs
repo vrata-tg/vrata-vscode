@@ -154,32 +154,6 @@ test("Chat Completions accepts an empty completed answer", async (t) => {
   );
   assert.deepEqual(parts, []);
 });
-test("does not retry HTTP failure or expose an upstream body", async (t) => {
-  let calls = 0;
-  const url = await server(t, (req, res) => {
-    calls++;
-    res.writeHead(502);
-    res.end("private upstream content");
-  });
-  await assert.rejects(
-    streamChat(url, "test", request, new AbortController().signal, () => {}),
-    { code: "service_error", status: 502 },
-  );
-  assert.equal(calls, 1);
-});
-test("does not replay a paid POST through a redirect", async (t) => {
-  let calls = 0;
-  const url = await server(t, (req, res) => {
-    calls++;
-    res.writeHead(307, { Location: "/redirected" });
-    res.end();
-  });
-  await assert.rejects(
-    streamChat(url, "test", request, new AbortController().signal, () => {}),
-    { code: "network" },
-  );
-  assert.equal(calls, 1);
-});
 test("rejects a truncated stream and never emits an incomplete tool", async (t) => {
   const url = await server(t, (req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream" });

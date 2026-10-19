@@ -37,7 +37,11 @@ for (const [path, stream] of [
         ...(retryAfter ? { "retry-after": "0" } : {}),
         ...(status === 307 ? { location: "/must-not-follow" } : {}),
       });
-      res.end('{"error":{"message":"private server response synthetic-key"}}');
+      res.end(
+        status === 502
+          ? "private server response synthetic-key"
+          : '{"error":{"message":"private server response synthetic-key"}}',
+      );
     });
     for (const [code, expected, retry] of [
       [401, "invalid_key"],
@@ -48,6 +52,7 @@ for (const [path, stream] of [
       [429, "key_limit"],
       [429, "rate_limit", true],
       [500, "service_error"],
+      [502, "service_error"],
       [307, "network"],
     ]) {
       status = code;

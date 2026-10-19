@@ -1,6 +1,5 @@
 import type {
   ResponseCreateParamsStreaming,
-  ResponseStreamEvent,
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses";
 import { openAIClient, TransportError, withModelStream } from "./model-client";
@@ -100,7 +99,8 @@ export async function streamResponses(
           call.arguments = item.arguments;
         return call;
       };
-      const processEvent = (event: ResponseStreamEvent) => {
+      for await (const event of events) {
+        requestSignal.throwIfAborted();
         if (
           !event ||
           typeof event !== "object" ||
@@ -153,12 +153,8 @@ export async function streamResponses(
             response?.usage?.input_tokens_details?.cached_tokens,
           );
           completed = true;
+          break;
         }
-      };
-      for await (const event of events) {
-        requestSignal.throwIfAborted();
-        processEvent(event);
-        if (completed) break;
       }
       requestSignal.throwIfAborted();
       if (!completed) throw invalid();

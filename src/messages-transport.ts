@@ -1,7 +1,4 @@
-import type {
-  MessageCreateParamsStreaming,
-  RawMessageStreamEvent,
-} from "@anthropic-ai/sdk/resources/messages";
+import type { MessageCreateParamsStreaming } from "@anthropic-ai/sdk/resources/messages";
 import {
   anthropicClient,
   TransportError,
@@ -93,7 +90,8 @@ export async function streamMessages(
       let finish: string | undefined;
       const invalid = () =>
         new TransportError("invalid_stream", 200, requestId);
-      const processEvent = (event: RawMessageStreamEvent) => {
+      for await (const event of events) {
+        requestSignal.throwIfAborted();
         if (
           !event ||
           typeof event !== "object" ||
@@ -105,12 +103,12 @@ export async function streamMessages(
           started = true;
           const message = event.message;
           inputUsage = { ...message?.usage };
-          return;
+          continue;
         }
         if (!started) throw invalid();
         if (event.type === "message_stop") {
           stopped = true;
-          return;
+          break;
         }
         if (event.type === "message_delta") {
           const delta = event.delta;
@@ -120,7 +118,7 @@ export async function streamMessages(
           inputUsage = { ...inputUsage, ...usage };
           if (usage?.output_tokens !== undefined)
             outputTokens = usage.output_tokens;
-          return;
+          continue;
         }
         if (event.type === "content_block_start") {
           const block = event.content_block;
@@ -138,13 +136,13 @@ export async function streamMessages(
             json: "",
             closed: false,
           });
-          return;
+          continue;
         }
         if (event.type === "content_block_stop") {
           const block = blocks.get(event.index);
           if (!block || block.closed) throw invalid();
           block.closed = true;
-          return;
+          continue;
         }
         if (event.type === "content_block_delta") {
           const block = blocks.get(event.index);
@@ -164,11 +162,6 @@ export async function streamMessages(
             block.json += delta.partial_json;
           else throw invalid();
         }
-      };
-      for await (const event of events) {
-        requestSignal.throwIfAborted();
-        processEvent(event);
-        if (stopped) break;
       }
       requestSignal.throwIfAborted();
       if (
