@@ -64,11 +64,6 @@ jobs:
             console.error('New version must be greater than the current package version.');
             process.exit(1);
           }
-          const fs = require('node:fs');
-          const previous = require('./package.json').version;
-          const readme = fs.readFileSync('README.md', 'utf8');
-          fs.writeFileSync('README.md', readme.replaceAll(
-            `vrata-ai-${previous}.vsix`, `vrata-ai-${process.env.RELEASE_VERSION}.vsix`));
           NODE
             npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
             echo 'existing=false' >> "$GITHUB_OUTPUT"
