@@ -1,7 +1,10 @@
 import { USER_AGENT } from "./user-agent";
+import { tokenUsage, Usage } from "./usage";
 
 export type Part =
-  { text: string } | { id: string; name: string; input: object };
+  | { text: string }
+  | { id: string; name: string; input: object }
+  | { usage: Usage };
 export type TransportCode =
   | "invalid_key"
   | "insufficient_balance"
@@ -80,7 +83,11 @@ export async function streamChat(
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ ...body, stream: true }),
+      body: JSON.stringify({
+        ...body,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
     });
   } catch {
     if (signal.aborted) signal.throwIfAborted();
@@ -107,6 +114,7 @@ export async function streamChat(
     finish: string | undefined,
     done = false;
   let failure: unknown;
+  let usage: Usage | undefined;
   try {
     while (!done) {
       const chunk = await reader.read();
@@ -124,6 +132,11 @@ export async function streamChat(
         }
         let event: {
           error?: unknown;
+          usage?: {
+            prompt_tokens?: unknown;
+            completion_tokens?: unknown;
+            prompt_tokens_details?: { cached_tokens?: unknown };
+          };
           choices?: { delta: Delta; finish_reason?: string }[];
         };
         try {
@@ -139,6 +152,12 @@ export async function streamChat(
           throw new TransportError("invalid_stream", 200, requestId);
         if (event.error)
           throw new TransportError("stream_error", 200, requestId);
+        if (event.usage)
+          usage = tokenUsage(
+            event.usage.prompt_tokens,
+            event.usage.completion_tokens,
+            event.usage.prompt_tokens_details?.cached_tokens,
+          );
         for (const choice of event.choices ?? []) {
           if (choice.finish_reason) finish = choice.finish_reason;
           if (choice.delta?.content) report({ text: choice.delta.content });
@@ -195,5 +214,7 @@ export async function streamChat(
     }
   }
   if (failure) throw failure;
+  signal.throwIfAborted();
+  if (usage) report({ usage });
   return requestId;
 }

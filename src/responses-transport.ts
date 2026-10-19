@@ -1,4 +1,5 @@
 import { USER_AGENT } from "./user-agent";
+import { tokenUsage, Usage } from "./usage";
 
 import {
   httpCode,
@@ -101,6 +102,7 @@ export async function streamResponses(
   let completed = false;
   let nextIndex = 0;
   let failure: unknown;
+  let usage: Usage | undefined;
   const invalid = () => new TransportError("invalid_stream", 200, requestId);
   const functionCall = (
     itemId: string,
@@ -172,6 +174,20 @@ export async function streamResponses(
         call.arguments = event.arguments;
       }
     } else if (event.type === "response.completed") {
+      const response = event.response as
+        | {
+            usage?: {
+              input_tokens?: unknown;
+              output_tokens?: unknown;
+              input_tokens_details?: { cached_tokens?: unknown };
+            };
+          }
+        | undefined;
+      usage = tokenUsage(
+        response?.usage?.input_tokens,
+        response?.usage?.output_tokens,
+        response?.usage?.input_tokens_details?.cached_tokens,
+      );
       completed = true;
     }
   };
@@ -225,5 +241,7 @@ export async function streamResponses(
     }
   }
   if (failure) throw failure;
+  signal.throwIfAborted();
+  if (usage) report({ usage });
   return requestId;
 }

@@ -1,4 +1,5 @@
 import { USER_AGENT } from "./user-agent";
+import { messagesUsage } from "./usage";
 
 import {
   httpCode,
@@ -108,6 +109,8 @@ export async function streamMessages(
   let started = false;
   let finish: string | undefined;
   let failure: unknown;
+  let inputUsage: Record<string, unknown> = {};
+  let outputTokens: unknown;
   const invalid = () => new TransportError("invalid_stream", 200, requestId);
   const processFrame = () => {
     const data = frame
@@ -129,6 +132,9 @@ export async function streamMessages(
     if (event.type === "message_start") {
       if (started) throw invalid();
       started = true;
+      const message = event.message as
+        { usage?: Record<string, unknown> } | undefined;
+      inputUsage = { ...message?.usage };
       return;
     }
     if (!started) throw invalid();
@@ -139,6 +145,10 @@ export async function streamMessages(
     if (event.type === "message_delta") {
       const delta = event.delta as Record<string, unknown> | undefined;
       if (typeof delta?.stop_reason === "string") finish = delta.stop_reason;
+      const usage = event.usage as Record<string, unknown> | undefined;
+      inputUsage = { ...inputUsage, ...usage };
+      if (usage?.output_tokens !== undefined)
+        outputTokens = usage.output_tokens;
       return;
     }
     if (event.type === "content_block_start") {
@@ -239,5 +249,9 @@ export async function streamMessages(
     reader.releaseLock();
   }
   if (failure) throw failure;
+  signal.throwIfAborted();
+  // Anthropic input_tokens excludes both cache reads and cache writes.
+  const usage = messagesUsage(inputUsage, outputTokens);
+  if (usage) report({ usage });
   return requestId;
 }

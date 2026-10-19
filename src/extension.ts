@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { toResponsePart } from "./response-part";
 import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, MessageContentPart, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
@@ -621,15 +622,8 @@ async function activateWithOutput(
                 signal,
                 (part) => {
                   if (!session.isCurrent() || signal?.aborted) return;
-                  progress.report(
-                    "text" in part
-                      ? new vscode.LanguageModelTextPart(part.text)
-                      : new vscode.LanguageModelToolCallPart(
-                          part.id,
-                          part.name,
-                          part.input,
-                        ),
-                  );
+                  const responsePart = toResponsePart(part);
+                  if (responsePart) progress.report(responsePart);
                 },
               );
               if (session.isCurrent() && !signal.aborted)
