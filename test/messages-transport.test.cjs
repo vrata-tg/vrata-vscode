@@ -14,7 +14,7 @@ async function server(t, handler) {
     service.closeAllConnections();
     service.close();
   });
-  return `http://127.0.0.1:${service.address().port}/v1/messages`;
+  return `http://127.0.0.1:${service.address().port}`;
 }
 function sse(type, fields = {}) {
   return `event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`;

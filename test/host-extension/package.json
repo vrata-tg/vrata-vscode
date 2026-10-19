@@ -6,6 +6,14 @@
     "vscode": "^1.104.0"
   },
   "main": "./extension.cjs",
+  "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "vrata-usage-test",
+        "displayName": "Usage fixture"
+      }
+    ]
+  },
   "activationEvents": [
     "onStartupFinished"
   ]

@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        vscode: ["1.104.0", "1.135.0", "1.138.0"]
+        vscode: ["1.104.0", "1.135.0", "1.138.0", "1.142.0"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

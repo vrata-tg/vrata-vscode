@@ -9,7 +9,7 @@
 
 Минимальная версия — **VS Code 1.104.0**, типы API закреплены на ней.
 CI проверяет установку VSIX, активацию и SecretStorage после перезапуска
-на Linux в **1.104.0, 1.135.0 и 1.138.0**. Windows/macOS и Remote/WSL
+на Linux в **1.104.0, 1.135.0, 1.138.0 и 1.142.0**. Windows/macOS и Remote/WSL
 пока не проверены.
 
 ## Разработка
@@ -25,7 +25,12 @@ npm run package
 `check` запускает TypeScript, ESLint, Prettier и тесты. `npm run format`
 применяет форматирование. **F5** запускает Extension Development Host
 с папкой `fixture` и TypeScript watch. Процесс разработки — в [AGENTS.md](AGENTS.md).
-Runtime dependencies отсутствуют; исходники, тесты и source maps исключены из VSIX.
+Модельные запросы используют официальные `openai` и `@anthropic-ai/sdk`.
+`build` собирает их вместе с общим модулем транспорта через esbuild и добавляет
+лицензионные уведомления. VSIX работает без внешнего `node_modules`; исходники,
+тесты и source maps исключены. SDK retries, redirects и собственные логи отключены.
+Фактический usage передаётся Copilot на VS Code 1.106+; до ответа оценка токенов
+остаётся локальной.
 
 Для Linux host tests нужны `xvfb`, `xauth`, `dbus-x11`, `gnome-keyring`
 и распакованный VS Code нужной версии:

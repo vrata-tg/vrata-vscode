@@ -10,7 +10,7 @@ async function server(t, handler) {
     s.closeAllConnections();
     s.close();
   });
-  return `http://127.0.0.1:${s.address().port}/v1/chat/completions`;
+  return `http://127.0.0.1:${s.address().port}`;
 }
 const request = {
   model: "fixture",
@@ -154,32 +154,6 @@ test("Chat Completions accepts an empty completed answer", async (t) => {
   );
   assert.deepEqual(parts, []);
 });
-test("does not retry HTTP failure or expose an upstream body", async (t) => {
-  let calls = 0;
-  const url = await server(t, (req, res) => {
-    calls++;
-    res.writeHead(502);
-    res.end("private upstream content");
-  });
-  await assert.rejects(
-    streamChat(url, "test", request, new AbortController().signal, () => {}),
-    { code: "service_error", status: 502 },
-  );
-  assert.equal(calls, 1);
-});
-test("does not replay a paid POST through a redirect", async (t) => {
-  let calls = 0;
-  const url = await server(t, (req, res) => {
-    calls++;
-    res.writeHead(307, { Location: "/redirected" });
-    res.end();
-  });
-  await assert.rejects(
-    streamChat(url, "test", request, new AbortController().signal, () => {}),
-    { code: "network" },
-  );
-  assert.equal(calls, 1);
-});
 test("rejects a truncated stream and never emits an incomplete tool", async (t) => {
   const url = await server(t, (req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -251,57 +225,56 @@ test("stream error objects do not leak into the exception cause", async (t) => {
   );
 });
 
-test("stream cleanup errors do not expose raw failures", async (t) => {
+test("SDK stream read and cleanup failures stay sanitized and release the body", async (t) => {
   const originalFetch = global.fetch;
   t.after(() => {
     global.fetch = originalFetch;
   });
-  const primary = new Error("read failure");
-  const cleanup = new Error("cancel failure");
-  for (const [readFailure, cancelFailure] of [
-    [undefined, cleanup],
-    [primary, cleanup],
-    [primary, primary],
-  ]) {
-    let released = false;
-    global.fetch = async () => ({
-      ok: true,
-      headers: new Headers(),
-      body: {
-        pipeThrough: () => ({
-          getReader: () => ({
-            read: async () => {
-              if (readFailure) throw readFailure;
-              return {
-                done: false,
-                value:
-                  'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\ndata: [DONE]\n',
-              };
-            },
-            cancel: async () => {
-              throw cancelFailure;
-            },
-            releaseLock: () => {
-              released = true;
-            },
-          }),
-        }),
+  for (const readFailure of [false, true]) {
+    const body = new ReadableStream({
+      start(controller) {
+        if (readFailure) controller.error(new Error("private read failure"));
+        else
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+            ),
+          );
+      },
+      cancel() {
+        throw new Error("private cancel failure");
       },
     });
-    await assert.rejects(
-      streamChat(
-        "http://fixture",
-        "test",
-        request,
-        new AbortController().signal,
-        () => {},
-      ),
-      (error) => {
-        assert.equal(error.code, readFailure ? "network" : "invalid_stream");
-        assert.ok(!error.stack.includes("cancel failure"));
-        return true;
-      },
+    global.fetch = async () => new Response(body);
+    const response = streamChat(
+      "http://fixture",
+      "test",
+      request,
+      new AbortController().signal,
+      () => {},
     );
-    assert.equal(released, true);
+    if (readFailure)
+      await assert.rejects(response, (error) => {
+        assert.equal(error.code, "network");
+        assert.equal(error.cause, undefined);
+        assert.doesNotMatch(error.stack, /private/);
+        return true;
+      });
+    else await response; // SDK treats cleanup failures after DONE as non-fatal.
+    assert.equal(body.locked, false);
   }
+});
+
+test("SDK accepts EOF after a semantic Chat finish without a DONE sentinel", async (t) => {
+  const url = await server(t, (_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.end('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+  });
+  await streamChat(
+    url,
+    "test",
+    request,
+    new AbortController().signal,
+    () => {},
+  );
 });

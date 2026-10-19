@@ -84,6 +84,9 @@ exports.run = async () => {
       }),
       undefined,
     );
+    const usagePart = await require("./host-usage.cjs").run(
+      extension.extensionPath,
+    );
     return {
       vscode: vscode.version,
       phase: process.env.VRATA_HOST_PHASE,
@@ -91,6 +94,7 @@ exports.run = async () => {
       secret_storage: true,
       readonly_requests: calls.length,
       github_session: false,
+      usage_data_part: usagePart,
       node: process.versions.node,
       utility_setting_available:
         vscode.workspace

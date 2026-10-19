@@ -33,7 +33,9 @@ provides direct entry prompts.
   or capabilities while the metadata contract is unfinished.
 - Use synthetic credentials and loopback HTTP in tests. Keep real credentials,
   generated `dist/`, dependencies and VSIX files out of git.
-- Keep runtime dependencies empty. Exclude development files from the VSIX.
+- Use the pinned official OpenAI and Anthropic SDKs for model transport. Disable
+  SDK retries, redirects and logging. Bundle runtime dependencies and their license
+  notices into the VSIX; exclude development files.
 
 ## Versioning
 

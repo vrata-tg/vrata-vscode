@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { toResponsePart } from "./response-part";
 import { diagnosticReport, formatError } from "./diagnostics";
 import { Message, MessageContentPart, streamChat } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
@@ -525,13 +526,10 @@ async function activateWithOutput(
               output.info(
                 `Запрос: модель ${targetId}, транспорт ${transport}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
-              let endpoint = `${API_ORIGIN}/v1/chat/completions`;
               let stream = streamChat;
               if (transport === "messages") {
-                endpoint = `${API_ORIGIN}/v1/messages`;
                 stream = streamMessages;
               } else if (transport === "responses") {
-                endpoint = `${API_ORIGIN}/v1/responses`;
                 stream = streamResponses;
               }
               const convertedMessages = toMessages(messages);
@@ -615,21 +613,14 @@ async function activateWithOutput(
                 };
               }
               const requestId = await stream(
-                endpoint,
+                API_ORIGIN,
                 session.key,
                 requestBody,
                 signal,
                 (part) => {
                   if (!session.isCurrent() || signal?.aborted) return;
-                  progress.report(
-                    "text" in part
-                      ? new vscode.LanguageModelTextPart(part.text)
-                      : new vscode.LanguageModelToolCallPart(
-                          part.id,
-                          part.name,
-                          part.input,
-                        ),
-                  );
+                  const responsePart = toResponsePart(part);
+                  if (responsePart) progress.report(responsePart);
                 },
               );
               if (session.isCurrent() && !signal.aborted)

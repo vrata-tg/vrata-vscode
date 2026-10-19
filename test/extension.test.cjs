@@ -278,12 +278,13 @@ test("native commands, masked input, silent discovery and secret events", async 
     if (options.method === "POST" && url.endsWith("/v1/responses"))
       return new Response(
         'data: {"type":"response.output_text.delta","delta":"ready"}\n\n' +
-          'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+          'data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":60,"output_tokens":12}}}\n\n',
       );
     if (options.method === "POST" && url.endsWith("/v1/chat/completions"))
       return new Response(
         'data: {"choices":[{"delta":{"content":"ready"}}]}\n\n' +
           'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+          'data: {"choices":[],"usage":{"prompt_tokens":60,"completion_tokens":12}}\n\n' +
           "data: [DONE]\n\n",
       );
     if (directMessages && url.endsWith("/v1/messages"))
@@ -565,6 +566,7 @@ test("native commands, masked input, silent discovery and secret events", async 
       onCancellationRequested: () => disposable,
     },
   );
+  assert.equal(vscode.LanguageModelDataPart, undefined);
   const visionBody = JSON.parse(
     requests.findLast((request) => request.options.method === "POST").options
       .body,
@@ -790,15 +792,34 @@ test("native commands, masked input, silent discovery and secret events", async 
     { silent: true },
     {},
   );
+  vscode.version = "1.142.0";
+  vscode.Uri = { joinPath: (_base, ...parts) => ({ path: parts.join("/") }) };
+  vscode.LanguageModelDataPart = class {
+    constructor(data, mimeType) {
+      Object.assign(this, { data, mimeType });
+    }
+  };
   const responsesParts = [];
   await provider.provideLanguageModelChatResponse(
     responsesModel,
     [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
     { modelOptions: { reasoningEffort: "high" } },
-    { report: (part) => responsesParts.push(part.value) },
+    { report: (part) => responsesParts.push(part) },
     token,
   );
-  assert.deepEqual(responsesParts, ["ready"]);
+  assert.equal(responsesParts.length, 2);
+  assert.equal(responsesParts[0].value, "ready");
+  assert.ok(responsesParts[1] instanceof vscode.LanguageModelDataPart);
+  assert.equal(responsesParts[1].mimeType, "usage");
+  assert.deepEqual(
+    JSON.parse(new TextDecoder().decode(responsesParts[1].data)),
+    {
+      prompt_tokens: 60,
+      completion_tokens: 12,
+      total_tokens: 72,
+      prompt_tokens_details: { cached_tokens: 0 },
+    },
+  );
   const responsesRequest = requests.findLast(
     (request) => request.options.method === "POST",
   );
@@ -819,49 +840,39 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.match(copied, /Модель: gpt-6-astra/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);
   const normalFetch = global.fetch;
-  let finishCleanup, cleanupStarted;
-  const cleanupReady = new Promise((resolve) => {
-    cleanupStarted = resolve;
+  let finishResponse, responseStarted;
+  const responseReady = new Promise((resolve) => {
+    responseStarted = resolve;
   });
   global.fetch = async (url, options) => {
     if (options.method !== "POST") return normalFetch(url, options);
-    return {
-      ok: true,
-      headers: new Headers({
-        "x-request-id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      }),
-      body: {
-        pipeThrough: () => ({
-          getReader: () => ({
-            read: async () => ({
-              done: false,
-              value: 'data: {"type":"response.completed"}\n\n',
-            }),
-            cancel: () =>
-              new Promise((resolve) => {
-                finishCleanup = resolve;
-                cleanupStarted();
-              }),
-            releaseLock() {},
-          }),
-        }),
-      },
-    };
+    responseStarted();
+    // Deliberately ignore abort to exercise rejection of a late old-session result.
+    return new Promise((resolve) => {
+      finishResponse = resolve;
+    });
   };
+  const lateParts = [];
   const lateResponse = assert.rejects(
     provider.provideLanguageModelChatResponse(
       responsesModel,
       [],
       {},
-      { report() {} },
+      { report: (part) => lateParts.push(part) },
       token,
     ),
     vscode.CancellationError,
   );
-  await cleanupReady;
+  await responseReady;
   await credentials.replace("synthetic-next-key");
-  finishCleanup();
+  finishResponse(
+    new Response(
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":60,"output_tokens":12}}}\n\n',
+      { headers: { "x-request-id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } },
+    ),
+  );
   await lateResponse;
+  assert.deepEqual(lateParts, []);
   await commands.get("vrata.copyDiagnostics")();
   assert.doesNotMatch(
     copied,

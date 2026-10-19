@@ -15,8 +15,8 @@ layer; the actual general-purpose workflow skills are vendored beside it.
 - Read-only questions and audits: inspect relevant files and return findings.
 - Small changes without behavioral impact (docs, wording, mechanical edits):
   use the task-owned worktree, edit directly, inspect the diff and run the
-  applicable checks. No formal plan, plan review, or separate simplification
-  workflow is required.
+  applicable checks. No formal plan or plan review is required; the mandatory
+  Ponytail Ultra pass below still applies before PR delivery.
 - Bounded executable changes with a clear approach: keep a short working plan,
   implement, simplify the changed code and review it. Use a document plan and
   plan review for significant design decisions, cross-cutting work, or changes
@@ -36,8 +36,7 @@ first use; reuse unchanged references that remain in context.
 3. Implement the cleaned plan with `../ce-work/SKILL.md` through its documented
    Phase 2 boundary, then return before Phase 3–4 loads
    `references/shipping-workflow.md`.
-4. Run the full simplification pass from `../ce-simplify-code/SKILL.md` while
-   preserving this repository's Ponytail rules.
+4. Run the Ponytail Ultra pass defined in section 6.
 5. Run report-only review from `../ce-code-review/SKILL.md` in `mode:agent`;
    use the vendored `../compound-engineering/` persona prompts when delegation
    is available. With no worker capacity, perform the read-only review locally,
@@ -152,7 +151,17 @@ relevant executable checks and inspect the complete diff. In the repository
 pipeline, stop after ce-work Phase 2; do not load its Phase 3–4 shipping workflow,
 open a PR, or start review from the implementation stage.
 
-## 6. Ponytail diff pass
+## 6. Mandatory Ponytail Ultra pass
+
+Before every PR creation or update, run Ponytail Ultra over the complete diff
+against current `origin/main`, including pending local changes. This applies to
+every route, including documentation-only changes. Review the final diff again
+if it changes after the pass.
+
+For executable changes, use `../ce-simplify-code/SKILL.md` to check reuse,
+quality and efficiency. With no worker capacity, perform all three lenses
+locally and disclose that the review is not independent. For documentation-only
+changes, inspect the diff directly without launching a separate workflow.
 
 Compare the complete diff with `origin/main` and remove:
 
@@ -164,6 +173,11 @@ Compare the complete diff with `origin/main` and remove:
 
 Prefer deletion and one canonical owner. Do not remove required validation or
 credential safety and cancellation proof.
+
+Confirm callers, output, errors and side-effect ordering before each deletion
+or simplification. Keep useful code when removal cannot be shown to preserve
+behavior; a pass with no changes is valid. Verify affected behavior and report
+what was simplified or why no change was needed.
 
 ## 7. Read-only code review
 
@@ -234,10 +248,18 @@ paid generation for routine verification.
 For implementation-only or review-only requests, return the verified result
 to the caller at that boundary. When delivering a PR:
 
+Complete the mandatory Ponytail Ultra pass in section 6 before creating or
+updating the PR.
+
 Fetch `origin` again before the final checks and push. If `origin/main` has
 advanced beyond the task branch's base, merge it into the task branch, resolve
 conflicts and rerun the affected checks before pushing. A failed fast-forward
 or push is a signal to fetch and reconcile, never to force push.
+
+When creating or updating a PR, its title must follow Conventional Commits,
+for example `type: description` or `type(scope): description` (scope is optional).
+Choose the type and description for the complete current PR diff, for example
+`feat: add token usage reporting`.
 
 1. stage only intended files and commit conventionally;
 2. push the feature branch and update its existing PR, or open one against
