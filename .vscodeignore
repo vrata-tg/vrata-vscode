@@ -9,7 +9,6 @@ tsconfig.json
 package-lock.json
 *.vsix
 .agents/**
-.bb/**
 .vscode/**
 AGENTS.md
 eslint.config.mjs
