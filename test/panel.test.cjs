@@ -11,8 +11,13 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   const loggedErrors = [];
   const disposable = { dispose() {} };
   const values = new Map();
-  const globalValues = new Map([["welcomeShown", true]]);
+  const globalValues = new Map([
+    ["welcomeShown", true],
+    ["vrata.panelReasoning", "low"],
+  ]);
   const treeProviders = [];
+  const statusItems = [];
+  let reasoningByModel = {};
 
   const quickPickQueue = [];
   const context = {
@@ -81,6 +86,8 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     workspace: {
       getConfiguration: () => ({
         inspect: () => ({ defaultValue: undefined }),
+        get: (setting) =>
+          setting === "reasoningEffortByModel" ? reasoningByModel : undefined,
       }),
     },
     window: {
@@ -92,11 +99,23 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
         },
         show() {},
       }),
-      createStatusBarItem: () => ({
-        ...disposable,
-        show() {},
-        hide() {},
-      }),
+      createStatusBarItem: (id) => {
+        const item = {
+          id,
+          disposed: false,
+          dispose() {
+            this.disposed = true;
+          },
+          show() {
+            this.visible = true;
+          },
+          hide() {
+            this.visible = false;
+          },
+        };
+        statusItems.push(item);
+        return item;
+      },
       registerTreeDataProvider: (viewId, treeProvider) => {
         assert.equal(viewId, "vrata.panel");
         treeProviders.push(treeProvider);
@@ -210,6 +229,23 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   });
 
   await extension.activate(context);
+  const reasoningStatus = statusItems.find(
+    (item) => item.command === "vrata.selectReasoning",
+  );
+  assert.equal(typeof reasoningStatus.id, "string");
+  assert.notEqual(
+    reasoningStatus.id,
+    statusItems[0].id,
+    "status visibility is independent",
+  );
+  assert.match(reasoningStatus.text, /Врата AI: Low$/);
+  await commands.get(reasoningStatus.command)();
+  assert.equal(
+    globalValues.get("vrata.panelReasoning"),
+    "low",
+    "cancel preserves the saved level",
+  );
+  assert.match(reasoningStatus.text, /Врата AI: Low$/);
   await new Promise(setImmediate);
 
   assert.equal(treeProviders.length, 1);
@@ -281,6 +317,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   quickPickQueue.push((items) => items.find((item) => item.label === "High"));
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), "high");
+  assert.equal(reasoningStatus.visible, true);
+  assert.match(reasoningStatus.text, /Врата AI: High$/);
+  assert.ok(context.subscriptions.includes(reasoningStatus));
   items = await treeProvider.getChildren();
   assert.ok(!items.some((item) => item.label.startsWith("Reasoning:")));
   const models = await provider.provideLanguageModelChatInformation(
@@ -361,6 +400,37 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   assert.equal(routedBody.reasoning_effort, "high");
 
+  reasoningByModel = { "claude-haiku-4-5": "max", "glm-5.3-flash": "invalid" };
+  for (const [model, options, expected] of [
+    [models[1], {}, "max"],
+    [models[0], {}, "high"],
+    [models[1], { modelOptions: { reasoningEffort: "none" } }, "none"],
+  ]) {
+    await provider.provideLanguageModelChatResponse(
+      model,
+      [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+      options,
+      { report() {} },
+      {
+        isCancellationRequested: false,
+        onCancellationRequested: () => disposable,
+      },
+    );
+    assert.equal(
+      JSON.parse(
+        requests.findLast((request) => request.options.method === "POST")
+          .options.body,
+      ).reasoning_effort,
+      expected,
+    );
+  }
+  reasoningByModel = {};
+  assert.match(
+    reasoningStatus.text,
+    /Врата AI: High$/,
+    "status shows the shared level",
+  );
+
   quickPickQueue.push((pickerItems) =>
     pickerItems.find((item) => item.label === "glm-5.3-flash"),
   );
@@ -419,6 +489,24 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   );
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), undefined);
+  assert.match(reasoningStatus.text, /Врата AI: По умолчанию$/);
+  await provider.provideLanguageModelChatResponse(
+    models[0],
+    [],
+    {},
+    { report() {} },
+    {
+      isCancellationRequested: false,
+      onCancellationRequested: () => disposable,
+    },
+  );
+  assert.equal(
+    JSON.parse(
+      requests.findLast((request) => request.options.method === "POST").options
+        .body,
+    ).reasoning_effort,
+    undefined,
+  );
 
   notices.length = 0;
   quickPickQueue.push((pickerItems) =>
@@ -491,4 +579,6 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       /private editor failure|synthetic-panel-key/,
     );
   }
+  for (const subscription of context.subscriptions) subscription.dispose();
+  assert.equal(reasoningStatus.disposed, true);
 });
