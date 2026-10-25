@@ -364,7 +364,7 @@ async function activateWithOutput(
     const label = REASONING_CHOICES.find(
       (choice) => choice.value === reasoning,
     )?.label;
-    reasoningStatus.text = `$(settings) Врата AI: ${label ?? "По умолчанию"}`;
+    reasoningStatus.text = `$(settings) Уровень размышлений: ${label ?? "По умолчанию"}`;
     reasoningStatus.show();
   }
   updateReasoningStatus();
