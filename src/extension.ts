@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
 import { toResponsePart } from "./response-part";
 import { diagnosticReport, formatError } from "./diagnostics";
-import { Message, MessageContentPart, streamChat } from "./transport";
+import {
+  Message,
+  MessageContentPart,
+  streamChat,
+  toChatMessages,
+} from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
 import { streamResponses, toResponsesInput } from "./responses-transport";
 import { projectCatalog } from "./catalog";
@@ -34,13 +39,17 @@ function modelPickerCategory(): string | { label: string; order: number } {
     : { label: MODEL_PICKER_CATEGORY_LABEL, order: 0 };
 }
 
-function text(parts: readonly unknown[]): string {
-  return parts
-    .map((part) => {
-      if (part instanceof vscode.LanguageModelTextPart) return part.value;
-      throw new Error("Vrata supports text tool results only");
-    })
-    .join("\n");
+function toolContent(parts: readonly unknown[]): string | MessageContentPart[] {
+  const content = parts.map((part): MessageContentPart => {
+    if (part instanceof vscode.LanguageModelTextPart)
+      return { type: "text", text: part.value };
+    const image = imagePart(part);
+    if (image) return image;
+    throw new Error("Vrata supports text and image tool results only");
+  });
+  return content.every((part) => part.type === "text")
+    ? content.map((part) => part.text).join("\n")
+    : content;
 }
 
 function imagePart(part: unknown): MessageContentPart | undefined {
@@ -104,7 +113,7 @@ export function toMessages(
         result.push({
           role: "tool",
           tool_call_id: part.callId,
-          content: text(part.content),
+          content: toolContent(part.content),
         });
       } else {
         const image = imagePart(part);
@@ -588,7 +597,7 @@ async function activateWithOutput(
               } else {
                 requestBody = {
                   model: targetId,
-                  messages: convertedMessages,
+                  messages: toChatMessages(convertedMessages),
                   max_tokens: model.maxOutputTokens,
                   ...(effort ? { reasoning_effort: effort } : {}),
                   ...(options.tools?.length

@@ -29,7 +29,9 @@ export function toAnthropicMessages(messages: readonly Message[]): object[] {
       content.push({
         type: "tool_result",
         tool_use_id: message.tool_call_id,
-        content: message.content ?? "",
+        content: Array.isArray(message.content)
+          ? message.content.map(anthropicContentPart)
+          : (message.content ?? ""),
       });
     } else {
       if (Array.isArray(message.content))

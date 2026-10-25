@@ -20,7 +20,9 @@ export function toResponsesInput(messages: readonly Message[]): object[] {
       input.push({
         type: "function_call_output",
         call_id: message.tool_call_id,
-        output: message.content ?? "",
+        output: Array.isArray(message.content)
+          ? message.content.map(responseContent)
+          : (message.content ?? ""),
       });
       continue;
     }
