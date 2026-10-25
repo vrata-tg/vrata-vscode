@@ -17,17 +17,13 @@ export const REASONING_CHOICES: readonly ReasoningChoice[] = [
   {
     value: "none",
     label: "None",
-    description: "reasoning_effort: none — выключить рассуждения",
+    description: "выключить рассуждения",
   },
-  { value: "low", label: "Low", description: "reasoning_effort: low" },
-  { value: "medium", label: "Medium", description: "reasoning_effort: medium" },
-  { value: "high", label: "High", description: "reasoning_effort: high" },
-  {
-    value: "xhigh",
-    label: "Extra High",
-    description: "reasoning_effort: xhigh",
-  },
-  { value: "max", label: "Max", description: "reasoning_effort: max" },
+  { value: "low", label: "Low", description: "" },
+  { value: "medium", label: "Medium", description: "" },
+  { value: "high", label: "High", description: "" },
+  { value: "xhigh", label: "Extra High", description: "" },
+  { value: "max", label: "Max", description: "" },
 ];
 
 export function normalizeReasoning(value: unknown): ReasoningLevel | undefined {
