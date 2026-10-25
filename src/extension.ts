@@ -151,10 +151,10 @@ async function activateWithOutput(
     vscode.StatusBarAlignment.Right,
     49,
   );
-  reasoningStatus.name = "Врата AI: общий reasoning level";
+  reasoningStatus.name = "Врата AI: уровень ризонинга";
   reasoningStatus.command = "vrata.selectReasoning";
   reasoningStatus.tooltip =
-    "Выбрать общий уровень рассуждений Врата AI. Настройка модели и параметр запроса имеют приоритет.";
+    "Выбрать уровень рассуждений моделей Врата AI";
   let accountKey: string | undefined;
   let lastDiagnostic: { modelId?: string; code?: string; requestId?: string } =
     {};
