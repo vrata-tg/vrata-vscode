@@ -153,8 +153,7 @@ async function activateWithOutput(
   );
   reasoningStatus.name = "Врата AI: уровень ризонинга";
   reasoningStatus.command = "vrata.selectReasoning";
-  reasoningStatus.tooltip =
-    "Выбрать уровень рассуждений моделей Врата AI";
+  reasoningStatus.tooltip = "Выбрать уровень рассуждений моделей Врата AI";
   let accountKey: string | undefined;
   let lastDiagnostic: { modelId?: string; code?: string; requestId?: string } =
     {};
