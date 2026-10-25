@@ -21,6 +21,37 @@ export type MessageContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
+export function toChatMessages(messages: readonly Message[]): Message[] {
+  const result: Message[] = [];
+  let images: MessageContentPart[] = [];
+  for (const [index, message] of messages.entries()) {
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      result.push({
+        ...message,
+        content: message.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n"),
+      });
+      const toolImages = message.content.filter(
+        (part) => part.type === "image_url",
+      );
+      if (toolImages.length)
+        images.push(
+          { type: "text", text: `Images from tool ${message.tool_call_id}:` },
+          ...toolImages,
+        );
+    } else result.push(message);
+    // Chat Completions accepts images only in user messages. Keep all parallel
+    // tool replies together before inserting their associated images.
+    if (images.length && messages[index + 1]?.role !== "tool") {
+      result.push({ role: "user", content: images });
+      images = [];
+    }
+  }
+  return result;
+}
+
 export async function streamChat(
   origin: string,
   key: string,
