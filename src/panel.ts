@@ -152,8 +152,8 @@ async function pickReasoning(panel: VrataPanel): Promise<void> {
   const choice = await vscode.window.showQuickPick(
     [
       {
-        label: "По умолчанию сервера",
-        description: "не отправлять reasoning_effort",
+        label: "По умолчанию",
+        description: "",
         value: null as ReasoningLevel | null,
       },
       ...REASONING_CHOICES.map((item) => ({
@@ -163,13 +163,13 @@ async function pickReasoning(panel: VrataPanel): Promise<void> {
       })),
     ],
     {
-      title: "Врата AI: reasoning level",
+      title: "Врата AI: выбор уровня размышлений",
       placeHolder:
         "Текущий: " +
         (current
           ? (REASONING_CHOICES.find((item) => item.value === current)?.label ??
             current)
-          : "по умолчанию сервера"),
+          : "по умолчанию"),
     },
   );
   if (choice) await panel.setReasoning(choice.value ?? undefined);
