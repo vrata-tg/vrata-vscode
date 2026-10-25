@@ -411,13 +411,18 @@ async function activateWithOutput(
     const choice = await vscode.window.showQuickPick(
       [
         {
+          label: "Пополнить баланс / перейти в бот",
+          command: "vrata.getApiKey",
+        },
+        { label: "Открыть чат с агентом", command: "vrata.openChat" },
+        { label: "Как начать работу", command: "vrata.openWalkthrough" },
+        {
           label: credentials.connected
             ? "Заменить API-ключ"
             : "Вставить API-ключ",
           command: "vrata.setApiKey",
         },
-        { label: "Пополнить баланс / открыть бот", command: "vrata.getApiKey" },
-        { label: "Как начать работу", command: "vrata.openWalkthrough" },
+        { label: "Отладочные логи", command: "vrata.showLogs" },
       ],
       {
         title: credentials.connected
