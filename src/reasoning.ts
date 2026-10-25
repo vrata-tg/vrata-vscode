@@ -40,9 +40,14 @@ export function normalizeReasoning(value: unknown): ReasoningLevel | undefined {
 export function resolveReasoning(
   options: { modelOptions?: object } | undefined,
   stored: unknown,
+  modelPreference?: unknown,
 ): ReasoningLevel | undefined {
   const override = options?.modelOptions
     ? (options.modelOptions as { reasoningEffort?: unknown }).reasoningEffort
     : undefined;
-  return normalizeReasoning(override) ?? normalizeReasoning(stored);
+  return (
+    normalizeReasoning(override) ??
+    normalizeReasoning(modelPreference) ??
+    normalizeReasoning(stored)
+  );
 }

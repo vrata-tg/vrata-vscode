@@ -16,6 +16,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   let statusItem;
   const executed = [];
   let utilitySettingAvailable = false;
+  let reasoningByModel = {};
   const contextValues = new Map();
   const values = new Map();
   const errors = [],
@@ -110,7 +111,8 @@ test("native commands, masked input, silent discovery and secret events", async 
               ? { defaultValue: "default" }
               : { key: setting, defaultValue: undefined }
             : undefined,
-        get: () => undefined,
+        get: (setting) =>
+          setting === "reasoningEffortByModel" ? reasoningByModel : undefined,
       }),
     },
     EventEmitter: class {
@@ -145,8 +147,10 @@ test("native commands, masked input, silent discovery and secret events", async 
           show: () => logShown++,
         };
       },
-      createStatusBarItem: () =>
-        (statusItem = {
+      createStatusBarItem: (id) => {
+        if (id === "vrata.reasoning")
+          return { ...disposable, show() {}, hide() {} };
+        return (statusItem = {
           ...disposable,
           show() {
             statusShown = true;
@@ -154,7 +158,8 @@ test("native commands, masked input, silent discovery and secret events", async 
           hide() {
             statusHidden++;
           },
-        }),
+        });
+      },
       registerTreeDataProvider: (viewId, treeProvider) => {
         assert.equal(viewId, "vrata.panel");
         treeProviders.push(treeProvider);
@@ -740,6 +745,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     {},
   );
   const directParts = [];
+  reasoningByModel = { [claude.id]: "high" };
   await provider.provideLanguageModelChatResponse(
     claude,
     [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
@@ -752,6 +758,13 @@ test("native commands, masked input, silent discovery and secret events", async 
     requests.findLast((request) => request.options.method === "POST").url,
     /\/v1\/messages$/,
   );
+  const messagesBody = JSON.parse(
+    requests.findLast((request) => request.options.method === "POST").options
+      .body,
+  );
+  assert.equal(messagesBody.reasoning_effort, undefined);
+  assert.equal(messagesBody.reasoning, undefined);
+  assert.equal(messagesBody.thinking, undefined);
   await provider.provideLanguageModelChatResponse(
     claude,
     [
@@ -794,6 +807,21 @@ test("native commands, masked input, silent discovery and secret events", async 
     }
   };
   const responsesParts = [];
+  reasoningByModel = { [responsesModel.id]: "none" };
+  await provider.provideLanguageModelChatResponse(
+    responsesModel,
+    [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
+    {},
+    { report() {} },
+    token,
+  );
+  assert.deepEqual(
+    JSON.parse(
+      requests.findLast((request) => request.options.method === "POST").options
+        .body,
+    ).reasoning,
+    { effort: "none" },
+  );
   await provider.provideLanguageModelChatResponse(
     responsesModel,
     [{ role: 1, content: [new vscode.LanguageModelTextPart("hello")] }],
@@ -830,6 +858,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     reasoning: { effort: "high" },
     stream: true,
   });
+  reasoningByModel = {};
   await commands.get("vrata.copyDiagnostics")();
   assert.match(copied, /Модель: gpt-6-astra/);
   assert.doesNotMatch(copied, /synthetic-new-key|hello|ready/);

@@ -62,10 +62,6 @@
           "when": "false"
         },
         {
-          "command": "vrata.selectReasoning",
-          "when": "false"
-        },
-        {
           "command": "vrata.copyDiagnostics",
           "when": "false"
         },
@@ -192,7 +188,28 @@
           }
         ]
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Врата AI",
+      "properties": {
+        "vrata.reasoningEffortByModel": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Уровень рассуждений для каждой модели: ключ — ID модели из каталога Врата AI. Переопределяет общий уровень из строки состояния; параметр запроса `modelOptions.reasoningEffort` имеет наивысший приоритет. Неизвестные значения игнорируются. Поддержка уровней зависит от модели; для транспорта Messages используется значение сервера.",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          }
+        }
+      }
+    }
   },
   "scripts": {
     "build": "tsc && node build-sdk.mjs",

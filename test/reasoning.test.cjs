@@ -27,3 +27,25 @@ test("stored level applies; explicit modelOptions override wins", () => {
   );
   assert.equal(resolveReasoning({ modelOptions: {} }, undefined), undefined);
 });
+
+test("reasoning precedence is request, model preference, shared level, server", () => {
+  for (const [request, model, shared, expected] of [
+    ["low", "max", "high", "low"],
+    ["none", "max", "high", "none"],
+    [undefined, "none", "high", "none"],
+    ["invalid", "max", "high", "max"],
+    [undefined, "invalid", "high", "high"],
+    [undefined, null, undefined, undefined],
+    [undefined, {}, "high", "high"],
+    [undefined, undefined, "invalid", undefined],
+  ]) {
+    assert.equal(
+      resolveReasoning(
+        { modelOptions: { reasoningEffort: request } },
+        shared,
+        model,
+      ),
+      expected,
+    );
+  }
+});

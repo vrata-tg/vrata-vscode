@@ -15,7 +15,7 @@ import {
 } from "./credentials";
 import { API_ORIGIN, BOT_URL, CredentialError, GatewayClient } from "./gateway";
 import { VrataPanel, registerPanelCommands } from "./panel";
-import { resolveReasoning } from "./reasoning";
+import { REASONING_CHOICES, resolveReasoning } from "./reasoning";
 import { modelPickerTabsEnabled } from "./welcome";
 
 const MODEL_PICKER_CATEGORY_LABEL = "Врата AI";
@@ -146,6 +146,15 @@ async function activateWithOutput(
     50,
   );
   status.command = "vrata.manage";
+  const reasoningStatus = vscode.window.createStatusBarItem(
+    "vrata.reasoning",
+    vscode.StatusBarAlignment.Right,
+    49,
+  );
+  reasoningStatus.name = "Врата AI: общий reasoning level";
+  reasoningStatus.command = "vrata.selectReasoning";
+  reasoningStatus.tooltip =
+    "Выбрать общий уровень рассуждений Врата AI. Настройка модели и параметр запроса имеют приоритет.";
   let accountKey: string | undefined;
   let lastDiagnostic: { modelId?: string; code?: string; requestId?: string } =
     {};
@@ -347,7 +356,19 @@ async function activateWithOutput(
     vscode.env.openExternal(vscode.Uri.parse(BOT_URL)),
   );
   const panel = new VrataPanel(context, credentials);
-  panel.onExternalChange = () => changes.fire();
+  panel.onExternalChange = () => {
+    updateReasoningStatus();
+    changes.fire();
+  };
+  function updateReasoningStatus(): void {
+    const reasoning = panel.reasoning;
+    const label = REASONING_CHOICES.find(
+      (choice) => choice.value === reasoning,
+    )?.label;
+    reasoningStatus.text = `$(settings) Врата AI: ${label ?? "По умолчанию"}`;
+    reasoningStatus.show();
+  }
+  updateReasoningStatus();
   registerPanelCommands(
     panel,
     () => projectCatalog(credentials.catalog).models,
@@ -411,6 +432,7 @@ async function activateWithOutput(
     credentials,
     changes,
     status,
+    reasoningStatus,
     context.secrets.onDidChange((event) => {
       if (event.key === SECRET_KEY) {
         const key = credentials.key;
@@ -494,7 +516,15 @@ async function activateWithOutput(
               const targetId = model.id;
               const transport =
                 catalog.transports[targetId] ?? "chat_completions";
-              const effort = resolveReasoning(options, panel.reasoning);
+              const effort = resolveReasoning(
+                options,
+                panel.reasoning,
+                vscode.workspace
+                  .getConfiguration("vrata")
+                  .get<Record<string, unknown>>("reasoningEffortByModel")?.[
+                  targetId
+                ],
+              );
               output.info(
                 `Запрос: модель ${targetId}, транспорт ${transport}, reasoning_effort ${effort ?? "не задан (по умолчанию сервера)"}.`,
               );
