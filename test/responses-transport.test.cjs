@@ -1,6 +1,8 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
+const { formatError } = require("../dist/diagnostics");
+const { requestError } = require("../dist/request-errors");
 const {
   streamResponses,
   toResponsesInput,
@@ -184,4 +186,71 @@ test("maps HTTP failures without exposing response bodies", async (t) => {
     ),
     { code: "rate_limit", status: 429 },
   );
+});
+
+test("Responses terminal failures retain the event and reason in redacted diagnostics", async (t) => {
+  let event;
+  const url = await server(t, (_req, res) => {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "x-request-id": "response-failure-id",
+    });
+    res.end(`data: ${JSON.stringify(event)}\n\n`);
+  });
+  for (event of [
+    {
+      type: "error",
+      code: "server_error",
+      message: "upstream failed synthetic",
+      param: null,
+    },
+    {
+      type: "response.failed",
+      response: {
+        id: "upstream-response-id",
+        status: "failed",
+        error: { code: "server_error", message: "upstream failed synthetic" },
+      },
+    },
+    {
+      type: "response.incomplete",
+      response: {
+        id: "upstream-response-id",
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+      },
+    },
+  ]) {
+    const parts = [];
+    await assert.rejects(
+      streamResponses(
+        url,
+        "synthetic",
+        { model: "fixture", input: [] },
+        new AbortController().signal,
+        (part) => parts.push(part),
+      ),
+      (error) => {
+        assert.equal(error.code, "stream_error");
+        assert.equal(error.requestId, "response-failure-id");
+        assert.deepEqual(error.cause, event);
+        const logged = formatError(error, "synthetic");
+        assert.ok(logged.includes(event.type));
+        assert.match(logged, /response-failure-id/);
+        if (event.type === "response.incomplete") {
+          assert.match(logged, /max_output_tokens/);
+        } else {
+          assert.match(logged, /upstream failed \[REDACTED\]/);
+          assert.match(logged, /server_error/);
+        }
+        assert.doesNotMatch(logged, /synthetic/);
+        assert.doesNotMatch(
+          requestError(error).message,
+          /upstream failed|synthetic|max_output_tokens/,
+        );
+        return true;
+      },
+    );
+    assert.deepEqual(parts, []);
+  }
 });

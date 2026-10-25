@@ -8,9 +8,12 @@ export function formatError(
     depth: null,
     colors: false,
     customInspect: false,
+    maxArrayLength: null,
+    maxStringLength: null,
   });
   for (const key of keys
     .filter((key): key is string => !!key)
+    .flatMap((key) => [key, JSON.stringify(key).slice(1, -1)])
     .sort((a, b) => b.length - a.length)) {
     const quoted = inspect(key);
     const escaped = quoted.slice(1, -1);

@@ -4,6 +4,8 @@ const http = require("node:http");
 const { streamChat } = require("../dist/transport");
 const { streamMessages } = require("../dist/messages-transport");
 const { streamResponses } = require("../dist/responses-transport");
+const { formatError } = require("../dist/diagnostics");
+const { requestError } = require("../dist/request-errors");
 const userAgent = `vrata-vscode/${require("../package.json").version}`;
 const request = { model: "fixture", messages: [], input: [], max_tokens: 10 };
 
@@ -72,7 +74,15 @@ for (const [path, stream] of [
             assert.equal(error.status, status);
             assert.equal(error.requestId, "fixture-request");
           }
-          assert.equal(error.cause, undefined);
+          assert.ok(error.cause instanceof Error);
+          const logged = formatError(error, "synthetic-key");
+          if (status !== 307) {
+            assert.match(logged, /private server response/);
+            assert.match(logged, /fixture-request/);
+            assert.match(logged, /\[REDACTED\]/);
+          }
+          assert.doesNotMatch(logged, /synthetic-key/);
+          assert.doesNotMatch(requestError(error).message, /private|synthetic/);
           assert.doesNotMatch(error.stack, /private|synthetic-key/);
           return true;
         },
@@ -87,6 +97,56 @@ for (const [path, stream] of [
       { name: "AbortError" },
     );
     assert.equal(calls, previous);
+  });
+
+  test(`${path}: logs original SSE error details with credentials redacted`, async (t) => {
+    let calls = 0;
+    const upstream = {
+      type: "upstream_error",
+      message: "provider failed synthetic-key",
+      code: "NEW_PROVIDER_CODE",
+      detail: { stage: "routing", providerRequestId: "provider-request" },
+    };
+    const origin = await server(t, (_req, res) => {
+      calls++;
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "x-request-id": "gateway-request",
+      });
+      res.end(`event: error\ndata: ${JSON.stringify({ error: upstream })}\n\n`);
+    });
+    await assert.rejects(
+      stream(
+        origin,
+        "synthetic-key",
+        request,
+        new AbortController().signal,
+        () => {},
+      ),
+      (error) => {
+        assert.equal(error.code, "stream_error");
+        assert.equal(error.status, 200);
+        assert.equal(error.requestId, "gateway-request");
+        assert.ok(error.cause instanceof Error);
+        const logged = formatError(error, "synthetic-key");
+        for (const detail of [
+          "provider failed",
+          "NEW_PROVIDER_CODE",
+          "routing",
+          "provider-request",
+          "gateway-request",
+          "[REDACTED]",
+        ])
+          assert.ok(logged.includes(detail), detail);
+        assert.doesNotMatch(logged, /synthetic-key/);
+        assert.doesNotMatch(
+          requestError(error).message,
+          /provider failed|NEW_PROVIDER_CODE|synthetic-key/,
+        );
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
   });
 
   test(`${path}: deadline covers stalled response headers and body`, async (t) => {

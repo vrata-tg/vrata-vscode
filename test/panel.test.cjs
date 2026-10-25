@@ -238,14 +238,14 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     statusItems[0].id,
     "status visibility is independent",
   );
-  assert.match(reasoningStatus.text, /Врата AI: Low$/);
+  assert.match(reasoningStatus.text, /Low$/);
   await commands.get(reasoningStatus.command)();
   assert.equal(
     globalValues.get("vrata.panelReasoning"),
     "low",
     "cancel preserves the saved level",
   );
-  assert.match(reasoningStatus.text, /Врата AI: Low$/);
+  assert.match(reasoningStatus.text, /Low$/);
   await new Promise(setImmediate);
 
   assert.equal(treeProviders.length, 1);
@@ -318,7 +318,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), "high");
   assert.equal(reasoningStatus.visible, true);
-  assert.match(reasoningStatus.text, /Врата AI: High$/);
+  assert.match(reasoningStatus.text, /High$/);
   assert.ok(context.subscriptions.includes(reasoningStatus));
   items = await treeProvider.getChildren();
   assert.ok(!items.some((item) => item.label.startsWith("Reasoning:")));
@@ -425,11 +425,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     );
   }
   reasoningByModel = {};
-  assert.match(
-    reasoningStatus.text,
-    /Врата AI: High$/,
-    "status shows the shared level",
-  );
+  assert.match(reasoningStatus.text, /High$/, "status shows the shared level");
 
   quickPickQueue.push((pickerItems) =>
     pickerItems.find((item) => item.label === "glm-5.3-flash"),
@@ -485,11 +481,11 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     "the last picked level reaches the payload",
   );
   quickPickQueue.push((pickerItems) =>
-    pickerItems.find((item) => item.label === "По умолчанию сервера"),
+    pickerItems.find((item) => item.value === null),
   );
   await commands.get("vrata.selectReasoning")();
   assert.equal(globalValues.get("vrata.panelReasoning"), undefined);
-  assert.match(reasoningStatus.text, /Врата AI: По умолчанию$/);
+  assert.match(reasoningStatus.text, /По умолчанию$/);
   await provider.provideLanguageModelChatResponse(
     models[0],
     [],
