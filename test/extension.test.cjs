@@ -461,9 +461,11 @@ test("native commands, masked input, silent discovery and secret events", async 
     "explicit Add Models must open provider management",
   );
   assert.deepEqual(quickPickItems[0], [
-    "Вставить API-ключ",
-    "Пополнить баланс / открыть бот",
+    "Пополнить баланс / перейти в бот",
+    "Открыть чат с агентом",
     "Как начать работу",
+    "Вставить API-ключ",
+    "Отладочные логи",
   ]);
   assert.equal(requests.length, 0);
   const discoveryTasks = [];
@@ -523,9 +525,11 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.equal(statusShown, true, "healthy connection shows the balance");
   await commands.get("vrata.manage")();
   assert.deepEqual(quickPickItems.at(-1), [
-    "Заменить API-ключ",
-    "Пополнить баланс / открыть бот",
+    "Пополнить баланс / перейти в бот",
+    "Открыть чат с агентом",
     "Как начать работу",
+    "Заменить API-ключ",
+    "Отладочные логи",
   ]);
   const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
@@ -587,7 +591,10 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.ok(!errors[0].includes("private data"));
   assert.doesNotMatch(errors[0], /HTTP|401|private data/);
   assert.equal(logShown, 1);
-  await commands.get("vrata.showLogs")();
+  quickPick = (items) =>
+    items.find((item) => item.command === "vrata.showLogs");
+  await commands.get("vrata.manage")();
+  quickPick = null;
   assert.equal(logShown, 2);
   assert.ok(logLines.some((line) => line.includes("HTTP 401")));
   let changes = 0;
