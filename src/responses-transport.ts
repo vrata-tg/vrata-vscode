@@ -112,7 +112,9 @@ export async function streamResponses(
           event.type === "response.failed" ||
           event.type === "response.incomplete"
         )
-          throw new TransportError("stream_error", 200, requestId);
+          throw new TransportError("stream_error", 200, requestId, {
+            cause: event,
+          });
         if (
           event.type === "response.output_text.delta" ||
           event.type === "response.refusal.delta"

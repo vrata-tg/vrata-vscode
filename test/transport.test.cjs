@@ -205,27 +205,7 @@ test("malformed JSON is classified without exposing the payload", async (t) => {
   );
 });
 
-test("stream error objects do not leak into the exception cause", async (t) => {
-  const upstream = {
-    message: "new upstream failure",
-    code: "NEW_CODE",
-    detail: { stage: "routing" },
-  };
-  const url = await server(t, (_req, res) => {
-    res.writeHead(200, { "Content-Type": "text/event-stream" });
-    res.end(`data: ${JSON.stringify({ error: upstream })}\n\n`);
-  });
-  await assert.rejects(
-    streamChat(url, "test", request, new AbortController().signal, () => {}),
-    (error) => {
-      assert.equal(error.code, "stream_error");
-      assert.equal(error.cause, undefined);
-      return true;
-    },
-  );
-});
-
-test("SDK stream read and cleanup failures stay sanitized and release the body", async (t) => {
+test("SDK stream read failures retain their cause and release the body", async (t) => {
   const originalFetch = global.fetch;
   t.after(() => {
     global.fetch = originalFetch;
@@ -256,7 +236,7 @@ test("SDK stream read and cleanup failures stay sanitized and release the body",
     if (readFailure)
       await assert.rejects(response, (error) => {
         assert.equal(error.code, "network");
-        assert.equal(error.cause, undefined);
+        assert.equal(error.cause.message, "private read failure");
         assert.doesNotMatch(error.stack, /private/);
         return true;
       });

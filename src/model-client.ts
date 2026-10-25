@@ -48,8 +48,9 @@ export class TransportError extends Error {
     readonly code: TransportCode,
     readonly status?: number,
     readonly requestId?: string,
+    options?: ErrorOptions,
   ) {
-    super(code);
+    super(code, options);
   }
 }
 
@@ -96,7 +97,7 @@ export async function withModelStream<T>(
       error instanceof OpenAI.APIConnectionTimeoutError ||
       error instanceof Anthropic.APIConnectionTimeoutError
     )
-      throw new TransportError("timeout", status, requestId);
+      throw new TransportError("timeout", status, requestId, { cause: error });
     if (error instanceof TransportError) throw error;
     if (
       error instanceof OpenAI.APIError ||
@@ -109,17 +110,21 @@ export async function withModelStream<T>(
           httpCode(error.status, headers?.get("retry-after") ?? null),
           error.status,
           requestId,
+          { cause: error },
         );
       if (
         !(error instanceof OpenAI.APIConnectionError) &&
         !(error instanceof Anthropic.APIConnectionError)
       )
-        throw new TransportError("stream_error", status, requestId);
+        throw new TransportError("stream_error", status, requestId, {
+          cause: error,
+        });
     }
     throw new TransportError(
       error instanceof SyntaxError ? "invalid_stream" : "network",
       status,
       requestId,
+      { cause: error },
     );
   }
 }
