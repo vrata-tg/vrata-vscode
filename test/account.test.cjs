@@ -17,7 +17,7 @@ test("balance and quota stay separate, including zero and reserve", () => {
     quota: { limit: "2000000", remaining: "0" },
   });
   assert.match(tooltip, /На счёте доступно: 1,25 ₽/);
-  assert.match(tooltip, /Зарезервировано отдельно: 0,5 ₽/);
+  assert.match(tooltip, /В резерве под текущие запросы: 0,5 ₽/);
   assert.match(tooltip, /Остаток лимита ключа: 0 ₽/);
   assert.equal(rubles("0"), "0 ₽");
 });

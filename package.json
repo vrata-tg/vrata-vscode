@@ -152,13 +152,14 @@
           {
             "id": "key",
             "title": "Вставьте API-ключ",
-            "description": " \n[Вставить API-ключ](command:vrata.setApiKey)\n[Открыть бота Врата AI](command:vrata.getApiKey)",
-            "media": {
-              "markdown": "media/connect-key.md"
-            },
+            "description": "Создайте или скопируйте ключ в разделе «API-ключи» бота.\n[Открыть бота Врата AI](command:vrata.getApiKey)\n[Вставить API-ключ](command:vrata.setApiKey)",
             "completionEvents": [
               "onContext:vrata.connected"
-            ]
+            ],
+            "media": {
+              "image": "media/empty.svg",
+              "altText": ""
+            }
           },
           {
             "id": "model-legacy",
@@ -166,7 +167,8 @@
             "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
             "when": "!vrata.modelPickerTabs",
             "media": {
-              "markdown": "media/connect-legacy.md"
+              "image": "media/empty.svg",
+              "altText": ""
             }
           },
           {
@@ -175,15 +177,17 @@
             "description": " \n[Открыть выбор модели](command:vrata.openModelPicker)",
             "when": "vrata.modelPickerTabs",
             "media": {
-              "markdown": "media/connect-tabs.md"
+              "image": "media/empty.svg",
+              "altText": ""
             }
           },
           {
             "id": "utility",
-            "title": "Для чего нужна служебная модель",
-            "description": " \n[Настроить служебную модель](command:vrata.utilitySettings)",
+            "title": "Настройте служебную модель",
+            "description": "Названия чатов и другие фоновые запросы могут расходовать баланс. Выберите Main Agent Model, чтобы использовать модель основного агента.\n[Настроить служебную модель](command:vrata.utilitySettings)",
             "media": {
-              "markdown": "media/utility.md"
+              "image": "media/empty.svg",
+              "altText": ""
             }
           }
         ]
