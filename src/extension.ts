@@ -163,7 +163,6 @@ async function activateWithOutput(
   reasoningStatus.name = "Врата AI: уровень ризонинга";
   reasoningStatus.command = "vrata.selectReasoning";
   reasoningStatus.tooltip = "Выбрать уровень рассуждений моделей Врата AI";
-  let accountKey: string | undefined;
   let lastDiagnostic: { modelId?: string; code?: string; requestId?: string } =
     {};
   let lastNoticeCode: string | undefined;
@@ -173,7 +172,7 @@ async function activateWithOutput(
   const credentials = new Credentials(
     context.secrets,
     new GatewayClient(fetch, (message) => output.info(message)),
-    () => {
+    (sessionChanged = false) => {
       updateStatus();
       if (
         catalogKey !== credentials.key ||
@@ -183,12 +182,11 @@ async function activateWithOutput(
         lastCatalog = credentials.catalog;
         changes.fire();
       }
-      if (accountKey !== credentials.key) {
-        accountKey = credentials.key;
+      if (sessionChanged) {
         lastDiagnostic = {};
         lastNoticeCode = undefined;
-        if (accountKey) {
-          const key = accountKey;
+        const key = credentials.key;
+        if (key) {
           void credentials.loadAccount().catch((error) => logError(error, key));
         }
       }
@@ -330,10 +328,30 @@ async function activateWithOutput(
   });
   command("vrata.refreshModels", async () => {
     if (!credentials.connected) return;
-    await credentials.loadCatalog(true);
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Врата AI: обновление каталога и аккаунта…",
+      },
+      () =>
+        credentials.run(async () => {
+          const results = await Promise.allSettled([
+            credentials.loadCatalog(true),
+            credentials.loadAccount(),
+          ]);
+          const errors = results
+            .filter((result) => result.status === "rejected")
+            .map((result) => result.reason);
+          if (errors.length)
+            throw new AggregateError(
+              errors,
+              "Не удалось обновить каталог и аккаунт Врат AI.",
+            );
+        }),
+    );
     const { models, unavailable } = projectCatalog(credentials.catalog);
     await vscode.window.showInformationMessage(
-      `Каталог Врат AI обновлён. Доступно моделей: ${models.length}.${
+      `Каталог и аккаунт Врат AI обновлены. Доступно моделей: ${models.length}.${
         unavailable.length ? ` Не показываются: ${unavailable.join("; ")}` : ""
       }`,
     );
@@ -425,6 +443,10 @@ async function activateWithOutput(
           command: "vrata.setApiKey",
         },
         { label: "Отладочные логи", command: "vrata.showLogs" },
+        {
+          label: "Обновить каталог и аккаунт вручную",
+          command: "vrata.refreshModels",
+        },
       ],
       {
         title: credentials.connected
