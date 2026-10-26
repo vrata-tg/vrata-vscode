@@ -24,9 +24,7 @@ export function accountTooltip(account: AccountSnapshot): string {
   const quotaText = quotaLabel(quota);
   return [
     `На счёте доступно: ${rubles(balance.spendable)}`,
-    `Оплачено: ${rubles(balance.paid_available)}`,
-    `Промо: ${rubles(balance.promo_available)}`,
-    `Зарезервировано отдельно: ${rubles(balance.reserved)}`,
+    `В резерве под текущие запросы: ${rubles(balance.reserved)}`,
     quotaText,
   ]
     .filter((line): line is string => line !== undefined)
