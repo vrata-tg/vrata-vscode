@@ -247,15 +247,8 @@ async function activateWithOutput(
       credentials.accountUnavailable && !credentials.accountInvalid
         ? "Не удалось получить баланс. Он обновится после следующего запроса."
         : undefined,
-      credentials.catalogUnavailable
-        ? "Каталог Врат AI недоступен. Обновите список моделей."
-        : undefined,
-      credentials.catalogStale ? "Каталог моделей устарел." : undefined,
-      credentials.catalogLoaded && !credentials.catalog.length
-        ? "Сервер не вернул моделей, разрешённых этому ключу."
-        : undefined,
       unavailable.length
-        ? `Не показываются модели: ${unavailable.join("; ")}`
+        ? `Недоступны модели: ${unavailable.join("; ")}`
         : undefined,
     ];
     status.tooltip = credentials.connected
@@ -487,13 +480,6 @@ async function activateWithOutput(
           ...model,
           category: modelPickerCategory(),
           ...(icon ? { icon } : {}),
-          ...(credentials.catalogStale
-            ? {
-                detail: "Каталог устарел",
-                tooltip:
-                  "Последнее обновление каталога не удалось. Ограничения проверяются сервером при запросе.",
-              }
-            : {}),
         }));
       },
       async provideTokenCount(_model, input) {
