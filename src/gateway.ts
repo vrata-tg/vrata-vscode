@@ -12,6 +12,7 @@ export class AccountError extends Error {
 
 export interface AccountSnapshot {
   checked_at: string;
+  key?: { name?: string };
   balance: {
     paid_available: string;
     promo_available: string;
@@ -31,10 +32,15 @@ function atoms(value: unknown): value is string {
 function accountSnapshot(value: unknown): AccountSnapshot | undefined {
   if (!value || typeof value !== "object") return undefined;
   const account = value as Record<string, unknown>;
+  const key = account.key as Record<string, unknown> | undefined;
   const balance = account.balance as Record<string, unknown> | undefined;
   const quota = account.quota as Record<string, unknown> | undefined;
   if (
     typeof account.checked_at !== "string" ||
+    (key !== undefined &&
+      (!key ||
+        typeof key !== "object" ||
+        (key.name !== undefined && typeof key.name !== "string"))) ||
     !balance ||
     balance.currency !== "RUB" ||
     balance.unit !== "coin_atoms" ||

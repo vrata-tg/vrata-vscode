@@ -121,6 +121,18 @@ test("account accepts zero balance and rejects malformed amounts", async () => {
       .spendable,
     "0",
   );
+  value = { ...account, key: { status: "active", name: "Смелая Лиса" } };
+  assert.equal(
+    (await client.account("fixture", new AbortController().signal)).key.name,
+    value.key.name,
+  );
+  value = { ...account, key: { status: "active" } };
+  await client.account("fixture", new AbortController().signal);
+  value = { ...account, key: { name: 42 } };
+  await assert.rejects(
+    client.account("fixture", new AbortController().signal),
+    { message: "INVALID_ACCOUNT" },
+  );
   value = { ...account, balance: { ...account.balance, spendable: "1.50" } };
   await assert.rejects(
     client.account("fixture", new AbortController().signal),

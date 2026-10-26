@@ -108,7 +108,19 @@ export class VrataPanel implements vscode.Disposable {
     return items;
   }
   private actions(connected: boolean): vscode.TreeItem[] {
-    const actions: vscode.TreeItem[] = [];
+    const keyName = this.credentials.account?.key?.name;
+    const actions: vscode.TreeItem[] = [
+      {
+        label: keyName ? `Ключ: ${keyName}` : "Подключить / заменить ключ",
+        tooltip: "Вставить / заменить API-ключ",
+        iconPath: new vscode.ThemeIcon("key"),
+        command: {
+          command: "vrata.setApiKey",
+          title: "Вставить / заменить API-ключ",
+        },
+        contextValue: "action.vrata.setApiKey",
+      },
+    ];
     const add = (label: string, command: string, icon: string): void => {
       actions.push({
         label,
@@ -117,7 +129,6 @@ export class VrataPanel implements vscode.Disposable {
         contextValue: `action.${command}`,
       });
     };
-    add("Подключить / заменить ключ", "vrata.setApiKey", "key");
     add(
       connected ? "Выбрать модель в чате" : "Открыть чат",
       connected ? "vrata.openModelPicker" : "vrata.openChat",

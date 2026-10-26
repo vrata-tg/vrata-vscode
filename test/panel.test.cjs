@@ -166,6 +166,8 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   const originalFetch = global.fetch;
   global.fetch = async (url, options) => {
     requests.push({ url, options });
+    if (options.headers.Authorization === "Bearer invalid-panel-key")
+      return new Response("", { status: 401 });
     if (options.method === "POST" && url.endsWith("/v1/chat/completions"))
       return new Response(
         'data: {"choices":[{"delta":{"content":"ready"}}]}\n\n' +
@@ -176,6 +178,13 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
       return new Response(
         JSON.stringify({
           checked_at: "2026-10-10T00:00:00Z",
+          key: {
+            status: "active",
+            name:
+              options.headers.Authorization === "Bearer synthetic-panel-key"
+                ? "Смелая Лиса"
+                : "Тихий Ёж",
+          },
           balance: {
             currency: "RUB",
             unit: "coin_atoms",
@@ -281,6 +290,34 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     items.some((item) => item.label.includes("24,6")),
     "panel shows the remaining key quota",
   );
+  const keyItem = items.find(
+    (item) => item.contextValue === "action.vrata.setApiKey",
+  );
+  assert.ok(keyItem.label.includes("Смелая Лиса"));
+  vscode.window.showInputBox = async (options) => {
+    assert.equal(options.password, true);
+    return "synthetic-replacement-key";
+  };
+  await commands.get(keyItem.command.command)();
+  await new Promise(setImmediate);
+  const replacedKeyItem = (await treeProvider.getChildren()).find(
+    (item) => item.contextValue === "action.vrata.setApiKey",
+  );
+  assert.ok(replacedKeyItem.label.includes("Тихий Ёж"));
+  assert.ok(!replacedKeyItem.label.includes("Смелая Лиса"));
+  const storedKey = values.get("vrata.apiKey");
+  assert.equal(storedKey, "synthetic-replacement-key");
+  for (const input of [undefined, "invalid-panel-key"]) {
+    vscode.window.showInputBox = async () => input;
+    await commands.get(replacedKeyItem.command.command)();
+    assert.equal(values.get("vrata.apiKey"), storedKey);
+    assert.equal(
+      (await treeProvider.getChildren()).find(
+        (item) => item.contextValue === "action.vrata.setApiKey",
+      ).label,
+      replacedKeyItem.label,
+    );
+  }
   assert.ok(
     !items.some(
       (item) =>
@@ -549,7 +586,7 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     ],
     ["workbench.action.chat.openModelPicker"],
   ]);
-  const failure = new Error("private editor failure synthetic-panel-key");
+  const failure = new Error(`private editor failure ${storedKey}`);
   vscode.commands.executeCommand = async () => {
     throw failure;
   };
@@ -569,11 +606,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
     await commands.get(`vrata.${id}`)();
     assert.equal(loggedErrors.length, before + 1);
     assert.match(loggedErrors.at(-1), /private editor failure/);
-    assert.doesNotMatch(loggedErrors.at(-1), /synthetic-panel-key/);
-    assert.doesNotMatch(
-      errors.at(-1),
-      /private editor failure|synthetic-panel-key/,
-    );
+    assert.ok(!loggedErrors.at(-1).includes(storedKey));
+    assert.doesNotMatch(errors.at(-1), /private editor failure/);
+    assert.ok(!errors.at(-1).includes(storedKey));
   }
   for (const subscription of context.subscriptions) subscription.dispose();
   assert.equal(reasoningStatus.disposed, true);
