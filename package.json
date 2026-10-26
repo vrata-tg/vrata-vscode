@@ -93,7 +93,7 @@
       },
       {
         "command": "vrata.refreshModels",
-        "title": "Обновить список моделей",
+        "title": "Обновить каталог и аккаунт вручную",
         "category": "Врата AI"
       },
       {

@@ -38,10 +38,14 @@ function fixture(initial) {
     }),
   };
   const changes = [];
+  const sessionChanges = [];
   const credentials = new Credentials(
     secrets,
     client,
-    () => changes.push(credentials.connected),
+    (sessionChanged) => {
+      changes.push(credentials.connected);
+      sessionChanges.push(sessionChanged);
+    },
     () => now,
   );
   return {
@@ -50,12 +54,53 @@ function fixture(initial) {
     values,
     reads,
     changes,
+    sessionChanges,
     client,
     advance: (milliseconds) => {
       now += milliseconds;
     },
   };
 }
+
+test("same-key replacement flags a new session, data updates and self reload do not", async () => {
+  const f = fixture("same");
+  await f.credentials.reload();
+  await f.credentials.loadCatalog();
+  await f.credentials.loadAccount();
+  assert.deepEqual(f.sessionChanges, [true, undefined, undefined]);
+  await f.credentials.replace("same");
+  assert.equal(f.credentials.account, undefined);
+  await f.credentials.reload();
+  assert.deepEqual(f.sessionChanges, [true, undefined, undefined, true]);
+  await f.credentials.remove();
+  assert.deepEqual(f.sessionChanges, [true, undefined, undefined, true, true]);
+});
+
+test("late account reply cannot populate a new session with the same key", async () => {
+  const f = fixture("same");
+  await f.credentials.reload();
+  const account = await f.client.account();
+  let complete, signal;
+  f.client.account = (_key, requestSignal) => {
+    signal = requestSignal;
+    return new Promise((resolve) => {
+      complete = resolve;
+    });
+  };
+  const old = assert.rejects(
+    f.credentials.loadAccount(),
+    CredentialOperationCancelled,
+  );
+  await f.credentials.replace("same");
+  assert.equal(signal.aborted, true);
+  complete(account);
+  await old;
+  assert.equal(f.credentials.account, undefined);
+  assert.deepEqual(f.sessionChanges, [true, true]);
+  f.client.account = async () => account;
+  await f.credentials.loadAccount();
+  assert.equal(f.credentials.account, account);
+});
 
 test("account refresh coalesces, keeps stale value, and isolates replacement keys", async () => {
   const f = fixture();
@@ -96,6 +141,13 @@ test("account refresh coalesces, keeps stale value, and isolates replacement key
   };
   await assert.rejects(f.credentials.loadAccount());
   assert.equal(f.credentials.accountInvalid, true);
+  assert.deepEqual(f.sessionChanges, [
+    true,
+    undefined,
+    undefined,
+    true,
+    undefined,
+  ]);
 });
 
 test("trim, validate read-only, persist and restore arbitrary-format key", async () => {
@@ -128,6 +180,7 @@ test("empty, invalid, revoked and failed storage preserve previous session", asy
   await assert.rejects(f.credentials.replace("new"));
   assert.equal(f.values.get(SECRET_KEY), "old");
   assert.deepEqual(f.credentials.catalog, [{ id: "old" }]);
+  assert.deepEqual(f.sessionChanges, [true, undefined]);
 });
 
 test("replacement aborts old requests, rejects late responses", async () => {
@@ -187,6 +240,7 @@ test("external SecretStorage changes invalidate the current account", async () =
   await f.secrets.delete(SECRET_KEY);
   await f.credentials.reload();
   assert.equal(f.credentials.connected, false);
+  assert.deepEqual(f.sessionChanges, [true, true, true]);
 });
 
 test("late old catalog cannot overwrite the replacement account", async () => {
@@ -341,6 +395,7 @@ test("TTL refresh marks only the same key's old catalog stale after failure", as
   await f.credentials.replace("second");
   assert.deepEqual(f.credentials.catalog, [{ id: "second-updated" }]);
   assert.equal(f.credentials.catalogStale, false);
+  assert.deepEqual(f.sessionChanges, [true, undefined, undefined, true]);
 });
 
 test("disposal during deletion does not notify disposed subscribers", async () => {

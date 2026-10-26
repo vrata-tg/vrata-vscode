@@ -41,7 +41,7 @@ export class Credentials {
   constructor(
     private readonly secrets: Secrets,
     private readonly client: CatalogClient,
-    private readonly changed: () => void,
+    private readonly changed: (sessionChanged?: boolean) => void,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -113,7 +113,7 @@ export class Credentials {
           controller: new AbortController(),
         }
       : undefined;
-    this.changed();
+    this.changed(true);
   }
 
   async replace(raw: string): Promise<void> {

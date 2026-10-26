@@ -26,6 +26,8 @@ test("native commands, masked input, silent discovery and secret events", async 
     cause: new Error("native keyring cause"),
   });
   let storeFailure, deleteFailure, fetchFailure, contextFailure, infoFailure;
+  let fetchOverride;
+  let accountSpendable = "0";
   let holdNotifications = false;
   const dismissNotifications = [];
   let input,
@@ -280,7 +282,12 @@ test("native commands, masked input, silent discovery and secret events", async 
   global.fetch = async (url, options) => {
     assert.ok(url.startsWith("https://api.vrata.tg/"));
     requests.push({ url, options });
-    if (fetchFailure) throw fetchFailure;
+    await fetchOverride?.(url, options);
+    if (fetchFailure) {
+      const failure =
+        typeof fetchFailure === "function" ? fetchFailure(url) : fetchFailure;
+      if (failure) throw failure;
+    }
     if (options.method === "POST" && url.endsWith("/v1/responses"))
       return new Response(
         'data: {"type":"response.output_text.delta","delta":"ready"}\n\n' +
@@ -312,7 +319,7 @@ test("native commands, masked input, silent discovery and secret events", async 
             paid_available: "0",
             promo_available: "0",
             reserved: "0",
-            spendable: "0",
+            spendable: accountSpendable,
           },
           quota: {
             currency: "RUB",
@@ -466,6 +473,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     "Как начать работу",
     "Вставить API-ключ",
     "Отладочные логи",
+    "Обновить каталог и аккаунт вручную",
   ]);
   assert.equal(requests.length, 0);
   const discoveryTasks = [];
@@ -530,6 +538,7 @@ test("native commands, masked input, silent discovery and secret events", async 
     "Как начать работу",
     "Заменить API-ключ",
     "Отладочные логи",
+    "Обновить каталог и аккаунт вручную",
   ]);
   const discovered = await Promise.all([
     provider.provideLanguageModelChatInformation({ silent: true }, {}),
@@ -606,16 +615,148 @@ test("native commands, masked input, silent discovery and secret events", async 
     1,
     "self secret event must not invalidate the new account twice",
   );
+  await new Promise(setImmediate);
   const beforeRefresh = requests.length;
   await commands.get("vrata.refreshModels")();
-  assert.equal(requests.length, beforeRefresh + 2);
+  assert.equal(requests.length, beforeRefresh + 3);
   assert.equal(changes, 2);
+  await t.test(
+    "same key reloads the account once and finishes loading",
+    async () => {
+      await new Promise(setImmediate);
+      const before = requests.length;
+      await commands.get("vrata.setApiKey")();
+      await new Promise(setImmediate);
+      const sent = requests.slice(before);
+      assert.equal(
+        sent.filter(({ url }) => url.endsWith("/v1/account")).length,
+        1,
+      );
+      assert.equal(
+        sent.filter(({ url }) => url.endsWith("/v1/models")).length,
+        2,
+      );
+      const items = await treeProviders[0].getChildren();
+      assert.ok(items.some((item) => item.contextValue === "balance"));
+      assert.ok(!items.some((item) => item.label.includes("загрузка баланса")));
+      assert.equal(values.get("vrata.apiKey"), "replacement");
+    },
+  );
+  await t.test(
+    "menu refresh updates a fresh catalog and visible account",
+    async () => {
+      accountSpendable = "1250000";
+      const before = requests.length;
+      try {
+        quickPick = (items) => items.at(-1);
+        await commands.get("vrata.manage")();
+        assert.equal(quickPicks.at(-1).command, "vrata.refreshModels");
+        assert.equal(requests.length, before + 3);
+        assert.match(statusItem.text, /1,25 ₽/);
+        const items = await treeProviders[0].getChildren();
+        assert.equal(
+          items.find((item) => item.contextValue === "balance").label,
+          "Баланс: 1,25 ₽",
+        );
+      } finally {
+        quickPick = null;
+        accountSpendable = "0";
+      }
+    },
+  );
+  for (const failed of [["models"], ["account"], ["models", "account"]]) {
+    await t.test(
+      `manual refresh handles failure of ${failed.join(" and ")}`,
+      async () => {
+        const before = requests.length;
+        const beforeErrors = errorLines.length;
+        const beforeNotices = notices.length;
+        fetchFailure = (url) =>
+          failed.some((resource) => url.endsWith(`/v1/${resource}`))
+            ? new Error(
+                `refresh ${url.endsWith("/v1/account") ? "account" : "models"} failed replacement`,
+              )
+            : undefined;
+        try {
+          await commands.get("vrata.refreshModels")();
+          const sent = requests.slice(before);
+          assert.equal(
+            sent.filter(({ url }) => url.endsWith("/v1/account")).length,
+            1,
+          );
+          assert.equal(
+            sent.filter(({ url }) => url.endsWith("/v1/models")).length,
+            failed.includes("models") ? 1 : 2,
+          );
+          assert.equal(
+            notices.length,
+            beforeNotices,
+            "partial refresh must not report success",
+          );
+          assert.equal(
+            errorLines.length,
+            beforeErrors + 1,
+            "log the original failures once at the command boundary",
+          );
+          for (const resource of failed)
+            assert.ok(
+              errorLines
+                .at(-1)
+                .includes(`refresh ${resource} failed [REDACTED]`),
+            );
+          assert.ok(!errorLines.at(-1).includes("replacement"));
+        } finally {
+          fetchFailure = undefined;
+        }
+      },
+    );
+  }
+  await t.test(
+    "replacement rejects a late account refresh without a success notice",
+    async () => {
+      let finishAccount;
+      fetchOverride = async (url, options) => {
+        if (
+          url.endsWith("/v1/account") &&
+          options.headers.Authorization === "Bearer replacement"
+        )
+          await new Promise((resolve) => {
+            finishAccount = resolve;
+          });
+      };
+      try {
+        const refresh = commands.get("vrata.refreshModels")();
+        await new Promise(setImmediate);
+        assert.ok(finishAccount);
+        input = "synthetic-next-key";
+        await commands.get("vrata.setApiKey")();
+        await new Promise(setImmediate);
+        const beforeNotices = notices.length;
+        const beforeErrors = errors.length;
+        finishAccount();
+        await refresh;
+        assert.equal(notices.length, beforeNotices);
+        assert.equal(
+          errors.length,
+          beforeErrors,
+          "session cancellation stays silent",
+        );
+        assert.equal(values.get("vrata.apiKey"), input);
+        assert.match(statusItem.text, /0 ₽/);
+      } finally {
+        finishAccount?.();
+        fetchOverride = undefined;
+      }
+    },
+  );
+  const beforeRemovalChanges = changes;
   await commands.get("vrata.removeApiKey")();
   assert.equal(values.size, 0);
   const requestCount = requests.length;
   await provider.provideLanguageModelChatInformation({ silent: true }, {});
+  await commands.get("vrata.refreshModels")();
   assert.equal(requests.length, requestCount);
-  assert.equal(changes, 3);
+  assert.equal(changes, beforeRemovalChanges + 1);
   assert.ok(
     !JSON.stringify([...errors, ...notices, ...logLines]).includes(
       "arbitrary-format",
