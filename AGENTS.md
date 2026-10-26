@@ -7,8 +7,8 @@ and synchronize it with current `origin/main` as described in the development
 skill's working-tree checklist. Start new branches from current `origin/main`.
 Preserve local edits; do not use a reset or force push to synchronize.
 
-Use Node.js 22 and `npm ci`. Read `package.json` for the commands and README for
-host-test prerequisites. Run `npm run check` and `npm run package` before shipping.
+Use Node.js 22 and `npm ci`. Read `package.json` for the commands and
+[.agents/DEVELOPMENT.md](.agents/DEVELOPMENT.md) for host-test prerequisites. Run `npm run check` and `npm run package` before shipping.
 Use F5 to launch the extension with the fixture workspace and TypeScript watch.
 
 The development workflow is adapted from the main `ai-billing-gateway`
