@@ -83,4 +83,3 @@ VS Code использует отдельную служебную модель,
 ## Ссылки
 
 - [Врата AI в Telegram](https://vrata.tg/bot) — API-ключи и пополнение баланса.
-- [Установка из VSIX: vrata-ai-1.0.0.vsix](https://github.com/vrata-tg/vrata-vscode/releases/download/v1.0.0/vrata-ai-1.0.0.vsix).
