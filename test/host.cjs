@@ -1,11 +1,12 @@
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const vscode = require("vscode");
+const { publisher, name } = require("../package.json");
 exports.run = async () => {
   if (process.env.VRATA_HOST_VERSION) {
     assert.equal(vscode.version, process.env.VRATA_HOST_VERSION);
   }
-  const extension = vscode.extensions.getExtension("vrata.vrata-ai");
+  const extension = vscode.extensions.getExtension(`${publisher}.${name}`);
   assert.ok(extension, "Install the VSIX first");
   await extension.activate();
   for (let i = 0; i < 3; i++) {

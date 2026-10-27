@@ -38,6 +38,9 @@ test("activity bar view, saved settings and reasoning payload", async (t) => {
   };
   const vscode = {
     version: "1.104.0",
+    extensions: {
+      getExtension: () => ({ isActive: false }),
+    },
     env: {
       clipboard: { writeText: async () => {} },
       openExternal: async (uri) => {

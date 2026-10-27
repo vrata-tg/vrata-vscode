@@ -150,6 +150,15 @@
         "description": "",
         "steps": [
           {
+            "id": "chat",
+            "title": "Проверьте GitHub Copilot Chat",
+            "description": "Для чата нужно расширение GitHub Copilot Chat. Старое GitHub Copilot устарело.\n[Открыть GitHub Copilot Chat](command:extension.open?%5B%22GitHub.copilot-chat%22%5D)\nЕсли Chat отключён и кнопки «Включить» нет, выполните Extensions: Enable All Extensions, затем Developer: Reload Window. Команда включает все отключённые расширения.",
+            "media": {
+              "image": "media/empty.svg",
+              "altText": ""
+            }
+          },
+          {
             "id": "key",
             "title": "Вставьте API-ключ",
             "description": "Создайте или скопируйте ключ в разделе «API-ключи» бота.\n[Открыть бота Врата AI](command:vrata.getApiKey)\n[Вставить API-ключ](command:vrata.setApiKey)",
