@@ -77,6 +77,7 @@ test("native commands, masked input, silent discovery and secret events", async 
   };
   const vscode = {
     version: "1.104.0",
+    extensions: { getExtension: () => ({ isActive: false }) },
     env: {
       clipboard: {
         writeText: async (value) => {

@@ -216,6 +216,22 @@ async function openModelPicker(modelId?: string): Promise<void> {
   await vscode.commands.executeCommand("workbench.action.chat.openModelPicker");
 }
 
+async function suggestCopilotChat(): Promise<void> {
+  if (vscode.extensions.getExtension("GitHub.copilot-chat")) return;
+  const action = await vscode.window.showWarningMessage(
+    "GitHub Copilot Chat недоступен расширению Врата AI в этом окне. Для работы чата проверьте, что он установлен и включён.",
+    "Открыть Copilot Chat",
+    "Инструкция",
+  );
+  if (action === "Открыть Copilot Chat")
+    await vscode.commands.executeCommand(
+      "extension.open",
+      "GitHub.copilot-chat",
+    );
+  else if (action === "Инструкция")
+    await vscode.commands.executeCommand("vrata.openWalkthrough");
+}
+
 export function registerPanelCommands(
   panel: VrataPanel,
   catalog: () => readonly { id: string }[],
@@ -223,8 +239,12 @@ export function registerPanelCommands(
 ): void {
   command("vrata.selectModel", () => pickModel(panel, catalog()));
   command("vrata.selectReasoning", () => pickReasoning(panel));
-  command("vrata.openChat", () => openChat());
+  command("vrata.openChat", async () => {
+    await suggestCopilotChat();
+    await openChat();
+  });
   command("vrata.openModelPicker", async () => {
+    await suggestCopilotChat();
     const models = catalog();
     const modelId =
       models.find((model) => model.id === panel.modelId)?.id ?? models[0]?.id;
