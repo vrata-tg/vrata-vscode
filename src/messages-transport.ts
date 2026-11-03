@@ -1,5 +1,6 @@
 import type { MessageCreateParamsStreaming } from "@anthropic-ai/sdk/resources/messages";
 import {
+  MODEL_REQUEST_TIMEOUT_MS,
   anthropicClient,
   TransportError,
   withModelStream,
@@ -68,7 +69,7 @@ export async function streamMessages(
   body: object,
   signal: AbortSignal,
   report: (part: Part) => void,
-  timeoutMs = 10 * 60_000,
+  timeoutMs = MODEL_REQUEST_TIMEOUT_MS,
 ): Promise<string | undefined> {
   let inputUsage: Record<string, unknown> = {};
   let outputTokens: unknown;
@@ -166,12 +167,10 @@ export async function streamMessages(
         }
       }
       requestSignal.throwIfAborted();
-      if (
-        !started ||
-        !stopped ||
-        (finish !== "end_turn" && finish !== "tool_use")
-      )
+      if (finish && finish !== "end_turn" && finish !== "tool_use")
         throw invalid();
+      if (!started || !stopped || !finish)
+        throw new TransportError("incomplete_stream", 200, requestId);
       const tools: Part[] = [];
       for (const block of blocks.values()) {
         if (!block.closed) throw invalid();

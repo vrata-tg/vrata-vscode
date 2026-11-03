@@ -166,7 +166,7 @@ test("rejects incomplete Responses streams without reporting tools", async (t) =
       new AbortController().signal,
       (part) => parts.push(part),
     ),
-    { code: "invalid_stream" },
+    { code: "incomplete_stream" },
   );
   assert.deepEqual(parts, []);
 });

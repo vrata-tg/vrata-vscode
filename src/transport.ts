@@ -1,5 +1,10 @@
 import type { ChatCompletionCreateParamsStreaming } from "openai/resources/chat/completions";
-import { openAIClient, TransportError, withModelStream } from "./model-client";
+import {
+  MODEL_REQUEST_TIMEOUT_MS,
+  openAIClient,
+  TransportError,
+  withModelStream,
+} from "./model-client";
 import { tokenUsage, Usage } from "./usage";
 export { TransportError } from "./model-client";
 
@@ -58,7 +63,7 @@ export async function streamChat(
   body: object,
   signal: AbortSignal,
   report: (part: Part) => void,
-  timeoutMs = 10 * 60_000,
+  timeoutMs = MODEL_REQUEST_TIMEOUT_MS,
 ): Promise<string | undefined> {
   let usage: Usage | undefined;
   const requestId = await withModelStream(
@@ -109,6 +114,8 @@ export async function streamChat(
         }
       }
       requestSignal.throwIfAborted();
+      if (!finish)
+        throw new TransportError("incomplete_stream", 200, requestId);
       if (finish !== "stop" && finish !== "tool_calls") throw invalid();
       const parts: Part[] = [...calls.values()].map((call) => {
         if (finish !== "tool_calls" || !call.id || !call.name) throw invalid();

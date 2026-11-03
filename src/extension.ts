@@ -6,6 +6,7 @@ import {
   MessageContentPart,
   streamChat,
   toChatMessages,
+  TransportError,
 } from "./transport";
 import { streamMessages, toAnthropicMessages } from "./messages-transport";
 import { streamResponses, toResponsesInput } from "./responses-transport";
@@ -13,6 +14,7 @@ import { projectCatalog } from "./catalog";
 import { estimateTokens } from "./token-count";
 import { accountTooltip, rubles } from "./account";
 import { requestError } from "./request-errors";
+import { withModelRetries } from "./request-retry";
 import {
   CredentialOperationCancelled,
   Credentials,
@@ -635,16 +637,38 @@ async function activateWithOutput(
                     : {}),
                 };
               }
-              const requestId = await stream(
-                API_ORIGIN,
-                session.key,
-                requestBody,
+              const requestId = await withModelRetries(
                 signal,
-                (part) => {
-                  if (!session.isCurrent() || signal?.aborted) return;
-                  const responsePart = toResponsePart(part);
-                  if (responsePart) progress.report(responsePart);
-                },
+                (requestSignal, publish) =>
+                  stream(
+                    API_ORIGIN,
+                    session.key,
+                    requestBody,
+                    requestSignal,
+                    (part) => {
+                      if (!session.isCurrent() || requestSignal.aborted) return;
+                      if ("text" in part && part.text === "") return;
+                      let responsePart:
+                        vscode.LanguageModelResponsePart | undefined;
+                      try {
+                        responsePart = toResponsePart(part);
+                      } catch (error) {
+                        // Local conversion is not a temporary upstream failure.
+                        throw new TransportError(
+                          "invalid_stream",
+                          undefined,
+                          undefined,
+                          { cause: error },
+                        );
+                      }
+                      if (responsePart) {
+                        // Set before report: even a throwing consumer may have
+                        // observed the part, so replay would be unsafe.
+                        publish();
+                        progress.report(responsePart);
+                      }
+                    },
+                  ),
               );
               if (session.isCurrent() && !signal.aborted)
                 lastDiagnostic = { modelId: model.id, requestId };

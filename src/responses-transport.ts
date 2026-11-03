@@ -2,7 +2,12 @@ import type {
   ResponseCreateParamsStreaming,
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses";
-import { openAIClient, TransportError, withModelStream } from "./model-client";
+import {
+  MODEL_REQUEST_TIMEOUT_MS,
+  openAIClient,
+  TransportError,
+  withModelStream,
+} from "./model-client";
 import { tokenUsage, Usage } from "./usage";
 
 import { Message, MessageContentPart, Part } from "./transport";
@@ -62,7 +67,7 @@ export async function streamResponses(
   body: object,
   signal: AbortSignal,
   report: (part: Part) => void,
-  timeoutMs = 10 * 60_000,
+  timeoutMs = MODEL_REQUEST_TIMEOUT_MS,
 ): Promise<string | undefined> {
   let usage: Usage | undefined;
   const requestId = await withModelStream(
@@ -161,7 +166,8 @@ export async function streamResponses(
         }
       }
       requestSignal.throwIfAborted();
-      if (!completed) throw invalid();
+      if (!completed)
+        throw new TransportError("incomplete_stream", 200, requestId);
       const parts: Part[] = [...calls.values()]
         .sort((left, right) => left.index - right.index)
         .map((call) => {

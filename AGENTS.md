@@ -24,7 +24,8 @@ provides direct entry prompts.
 - Keep stable VS Code APIs compatible with `engines.vscode`; pin `@types/vscode`
   to the minimum supported version. No proposed APIs or replacement chat UI.
 - Store API keys only in SecretStorage. Keep the gateway origin fixed. Validation
-  uses read-only GET; do not add retries or redirects to paid requests.
+  uses read-only GET. Paid requests may retry only temporary failures before
+  the first published response part, within the shared retry budget; no redirects.
 - Preserve session cancellation, serialized storage mutations and rejection of
   late results. Failed replacement must preserve the previous connection.
 - Log original exceptions once at entry points and redact all keys known to the
