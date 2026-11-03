@@ -34,6 +34,7 @@ export function requestError(error: unknown): {
     },
     service_error: { label: "Открыть журнал", command: "vrata.showLogs" },
     invalid_stream: { label: "Открыть журнал", command: "vrata.showLogs" },
+    incomplete_stream: { label: "Открыть журнал", command: "vrata.showLogs" },
     stream_error: { label: "Открыть журнал", command: "vrata.showLogs" },
   } as const;
   const messages = {
@@ -51,6 +52,7 @@ export function requestError(error: unknown): {
     network: "Нет связи с Вратами AI. Проверьте сеть и повторите вручную.",
     timeout: "Время ожидания Врат AI истекло. Повторите вручную.",
     invalid_stream: "Ответ Врат AI оборвался или имеет неверный формат.",
+    incomplete_stream: "Ответ Врат AI оборвался до завершения.",
     stream_error: "Врата AI завершили поток с ошибкой.",
   } as const;
   return {

@@ -282,7 +282,8 @@ test("native commands, masked input, silent discovery and secret events", async 
   global.fetch = async (url, options) => {
     assert.ok(url.startsWith("https://api.vrata.tg/"));
     requests.push({ url, options });
-    await fetchOverride?.(url, options);
+    const override = await fetchOverride?.(url, options);
+    if (override) return override;
     if (fetchFailure) {
       const failure =
         typeof fetchFailure === "function" ? fetchFailure(url) : fetchFailure;
@@ -854,7 +855,12 @@ test("native commands, masked input, silent discovery and secret events", async 
     isCancellationRequested: false,
     onCancellationRequested: () => disposable,
   };
-  await assert.rejects(
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const beforeFailedPosts = requests.filter(
+    (request) => request.options.method === "POST",
+  ).length;
+  const beforeFailureNotices = errors.length;
+  const failure = assert.rejects(
     provider.provideLanguageModelChatResponse(
       discovered[0][0],
       [],
@@ -863,6 +869,18 @@ test("native commands, masked input, silent discovery and secret events", async 
       token,
     ),
     /Нет связи с Вратами AI/,
+  );
+  await new Promise(setImmediate);
+  assert.equal(errors.length, beforeFailureNotices);
+  for (let retry = 0; retry < 20; retry++) {
+    t.mock.timers.tick(15_000);
+    await new Promise(setImmediate);
+  }
+  await failure;
+  t.mock.timers.reset();
+  assert.equal(
+    requests.filter((request) => request.options.method === "POST").length,
+    beforeFailedPosts + 21,
   );
   assert.equal(
     JSON.parse(
@@ -886,6 +904,131 @@ test("native commands, masked input, silent discovery and secret events", async 
   assert.match(balanceItem.label, /0 ₽/);
   assert.doesNotMatch(balanceItem.label, /устарел/i);
   fetchFailure = undefined;
+  // Exercise the actual provider publication boundary, not just the retry helper.
+  const response = (payload) => new Response(payload);
+  const hiddenFailure =
+    'data: {"choices":[{"delta":{"reasoning_content":"hidden","content":""}}]}\n\n' +
+    'data: {"error":{"type":"api_error","message":"temporary"}}\n\n';
+  let retriedPosts = 0;
+  fetchOverride = async (_url, options) => {
+    if (options.method === "POST" && ++retriedPosts === 1)
+      return response(hiddenFailure);
+  };
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const recoveredParts = [];
+  const recovered = provider.provideLanguageModelChatResponse(
+    discovered[0][0],
+    [],
+    {},
+    { report: (part) => recoveredParts.push(part.value) },
+    token,
+  );
+  await new Promise(setImmediate);
+  assert.deepEqual(recoveredParts, []);
+  t.mock.timers.tick(1000);
+  await recovered;
+  t.mock.timers.reset();
+  assert.equal(retriedPosts, 2);
+  assert.deepEqual(recoveredParts, ["ready"]);
+
+  let conversionPosts = 0;
+  fetchOverride = async (_url, options) => {
+    if (options.method === "POST") conversionPosts++;
+  };
+  const TextPart = vscode.LanguageModelTextPart;
+  vscode.LanguageModelTextPart = class {
+    constructor() {
+      throw new Error("local response conversion failed");
+    }
+  };
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const conversionFailure = assert.rejects(
+    provider.provideLanguageModelChatResponse(
+      discovered[0][0],
+      [],
+      {},
+      {
+        report() {
+          assert.fail("conversion must fail before publication");
+        },
+      },
+      token,
+    ),
+  );
+  await new Promise(setImmediate);
+  for (let retry = 0; retry < 20; retry++) {
+    t.mock.timers.tick(15_000);
+    await new Promise(setImmediate);
+  }
+  await conversionFailure;
+  t.mock.timers.reset();
+  vscode.LanguageModelTextPart = TextPart;
+  assert.equal(
+    conversionPosts,
+    1,
+    "local conversion failures must not replay generation",
+  );
+
+  const consumerPayloads = [
+    'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"fixture","function":{"name":"run","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n',
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+  ];
+  vscode.LanguageModelDataPart = class {
+    constructor(data, mimeType) {
+      Object.assign(this, { data, mimeType });
+    }
+  };
+  vscode.version = "1.106.0";
+  for (const payload of consumerPayloads) {
+    let posts = 0,
+      reports = 0;
+    fetchOverride = async (_url, options) => {
+      if (options.method === "POST") {
+        posts++;
+        return response(payload);
+      }
+    };
+    await assert.rejects(
+      provider.provideLanguageModelChatResponse(
+        discovered[0][0],
+        [],
+        {},
+        {
+          report() {
+            reports++;
+            throw new Error("downstream consumer failed");
+          },
+        },
+        token,
+      ),
+    );
+    assert.equal(
+      posts,
+      1,
+      "a throwing consumer may already have observed the part",
+    );
+    assert.equal(reports, 1);
+  }
+  vscode.version = "1.104.0";
+  let oldUsageReports = 0;
+  await provider.provideLanguageModelChatResponse(
+    discovered[0][0],
+    [],
+    {},
+    {
+      report() {
+        oldUsageReports++;
+      },
+    },
+    token,
+  );
+  assert.equal(
+    oldUsageReports,
+    0,
+    "unsupported usage is not published on VS Code 1.104",
+  );
+  fetchOverride = undefined;
   directMessages = true;
   await commands.get("vrata.refreshModels")();
   const [claude] = await provider.provideLanguageModelChatInformation(

@@ -166,7 +166,7 @@ test("rejects a truncated stream and never emits an incomplete tool", async (t) 
     streamChat(url, "test", request, new AbortController().signal, (p) =>
       parts.push(p),
     ),
-    { code: "invalid_stream" },
+    { code: "incomplete_stream" },
   );
   assert.deepEqual(parts, []);
 });
@@ -210,10 +210,15 @@ test("SDK stream read failures retain their cause and release the body", async (
   t.after(() => {
     global.fetch = originalFetch;
   });
-  for (const readFailure of [false, true]) {
+  for (const failure of ["none", "io", "unknown"]) {
     const body = new ReadableStream({
       start(controller) {
-        if (readFailure) controller.error(new Error("private read failure"));
+        if (failure !== "none")
+          controller.error(
+            Object.assign(new Error("private read failure"), {
+              ...(failure === "io" ? { code: "ECONNRESET" } : {}),
+            }),
+          );
         else
           controller.enqueue(
             new TextEncoder().encode(
@@ -233,9 +238,12 @@ test("SDK stream read failures retain their cause and release the body", async (
       new AbortController().signal,
       () => {},
     );
-    if (readFailure)
+    if (failure !== "none")
       await assert.rejects(response, (error) => {
-        assert.equal(error.code, "network");
+        assert.equal(
+          error.code,
+          failure === "io" ? "network" : "invalid_stream",
+        );
         assert.equal(error.cause.message, "private read failure");
         assert.doesNotMatch(error.stack, /private/);
         return true;

@@ -70,6 +70,7 @@ for (const [path, stream] of [
         ),
         (error) => {
           assert.equal(error.code, expected);
+          if (retry) assert.equal(error.retryAfterMs, 0);
           if (status !== 307) {
             assert.equal(error.status, status);
             assert.equal(error.requestId, "fixture-request");

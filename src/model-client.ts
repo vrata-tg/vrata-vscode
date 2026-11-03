@@ -2,8 +2,12 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { USER_AGENT } from "./user-agent";
 
+// The gateway can recover within one hour; allow five minutes for transport.
+export const MODEL_REQUEST_TIMEOUT_MS = 65 * 60_000;
+
 const options = {
   maxRetries: 0,
+  timeout: MODEL_REQUEST_TIMEOUT_MS,
   logLevel: "off" as const,
   fetchOptions: { redirect: "error" as const },
   defaultHeaders: { "User-Agent": USER_AGENT },
@@ -41,9 +45,12 @@ type TransportCode =
   | "network"
   | "timeout"
   | "invalid_stream"
+  | "incomplete_stream"
   | "stream_error";
 
 export class TransportError extends Error {
+  retryAfterMs?: number;
+
   constructor(
     readonly code: TransportCode,
     readonly status?: number,
@@ -61,6 +68,31 @@ function httpCode(status: number, retryAfter: string | null): TransportCode {
   if (status === 429) return retryAfter ? "rate_limit" : "key_limit";
   if (status === 413) return "request_too_large";
   return status >= 500 ? "service_error" : "request_rejected";
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (
+    error instanceof OpenAI.APIConnectionError ||
+    error instanceof Anthropic.APIConnectionError
+  )
+    return true;
+  // Fetch body failures are unwrapped by the SDK. Node's TypeError("terminated")
+  // retains an I/O cause; malformed SDK/consumer records can also throw TypeError.
+  for (let depth = 0; depth < 3 && error instanceof Error; depth++) {
+    if (
+      [
+        "ECONNRESET",
+        "EPIPE",
+        "ETIMEDOUT",
+        "UND_ERR_SOCKET",
+        "UND_ERR_BODY_TIMEOUT",
+        "ERR_STREAM_PREMATURE_CLOSE",
+      ].includes(String((error as NodeJS.ErrnoException).code))
+    )
+      return true;
+    error = error.cause;
+  }
+  return false;
 }
 
 // The deadline covers both response headers and the entire streamed body.
@@ -105,13 +137,24 @@ export async function withModelStream<T>(
     ) {
       const headers = error.headers;
       requestId ??= headers?.get("x-request-id") ?? undefined;
-      if (error.status !== undefined)
-        throw new TransportError(
+      if (error.status !== undefined) {
+        const failure = new TransportError(
           httpCode(error.status, headers?.get("retry-after") ?? null),
           error.status,
           requestId,
           { cause: error },
         );
+        const retryAfter = headers?.get("retry-after");
+        if (retryAfter) {
+          const seconds = Number(retryAfter);
+          const delay = Number.isFinite(seconds)
+            ? seconds * 1000
+            : Date.parse(retryAfter) - Date.now();
+          if (Number.isFinite(delay) && delay >= 0)
+            failure.retryAfterMs = delay;
+        }
+        throw failure;
+      }
       if (
         !(error instanceof OpenAI.APIConnectionError) &&
         !(error instanceof Anthropic.APIConnectionError)
@@ -121,7 +164,7 @@ export async function withModelStream<T>(
         });
     }
     throw new TransportError(
-      error instanceof SyntaxError ? "invalid_stream" : "network",
+      isNetworkError(error) ? "network" : "invalid_stream",
       status,
       requestId,
       { cause: error },
