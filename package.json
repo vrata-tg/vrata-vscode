@@ -250,7 +250,7 @@
     "Chat"
   ],
   "extensionKind": [
-    "ui"
+    "workspace"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
